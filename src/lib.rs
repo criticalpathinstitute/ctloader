@@ -20,6 +20,47 @@ pub struct Config {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct Analysis {
+    //group_id_list: Option<Vec<GroupId>>,
+    groups_desc: Option<String>,
+    non_inferiority_type: Option<String>,
+    non_inferiority_desc: Option<String>,
+    p_value: Option<String>,
+    p_value_desc: Option<String>,
+    method: Option<String>,
+    method_desc: Option<String>,
+    param_type: Option<String>,
+    param_value: Option<String>,
+    dispersion_type: Option<String>,
+    dispersion_value: Option<String>,
+    ci_percent: Option<f64>,
+    ci_n_sides: Option<String>,
+    ci_lower_limit: Option<String>,
+    ci_upper_limit: Option<String>,
+    ci_upper_limit_na_comment: Option<String>,
+    estimate_desc: Option<String>,
+    other_analysis_desc: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct AnalysisList {
+    analysis: Vec<Analysis>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct AnalyzeList {
+    analyzed: Vec<MeasureAnalyzed>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Baseline {
+    population: Option<String>,
+    group_list: Option<GroupList>,
+    analyzed_list: Option<AnalyzeList>,
+    measure_list: Option<MeasureList>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 struct ClinicalStudy {
     required_header: RequiredHeader,
     source: String,
@@ -42,7 +83,7 @@ struct ClinicalStudy {
     brief_title: String,
     official_title: Option<String>,
     sponsors: Sponsors,
-    oversight_info: OversightInfo,
+    oversight_info: Option<OversightInfo>,
     expanded_access_info: Option<ExpandedAccessInfo>,
     start_date: Option<String>,
     completion_date: Option<String>,
@@ -79,14 +120,26 @@ struct ClinicalStudy {
     reference: Option<Vec<Reference>>,
     results_reference: Option<Vec<Reference>>,
     responsible_party: Option<ResponsibleParty>,
+    condition_browse: Option<Browse>,
+    intervention_browse: Option<Browse>,
+    patient_data: Option<PatientData>,
+    study_docs: Option<StudyDocs>,
+    provided_document_section: Option<ProvidedDocuments>,
+    // pending_results: Option<Vec<PendingResult>>,
+    clinical_results: Option<ClinicalResults>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Address {
-    city: String,
+    city: Option<String>,
     state: Option<String>,
     zip: Option<String>,
-    country: String,
+    country: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Browse {
+    mesh_term: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -94,6 +147,23 @@ struct ArmGroup {
     arm_group_label: String,
     arm_group_type: Option<String>,
     description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct CertainAgreements {
+    pi_employee: Option<String>,
+    restrictive_agreement: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct ClinicalResults {
+    participant_flow: Option<ParticipantFlow>,
+    baseline: Option<Baseline>,
+    outcome_list: Option<OutcomeList>,
+    reported_events: Option<ReportedEvents>,
+    certain_agreements: Option<CertainAgreements>,
+    limitations_and_caveats: Option<String>,
+    point_of_contact: Option<PointOfContact>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -113,6 +183,16 @@ struct Country {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct CountList {
+    count: Option<Vec<MeasureCount>>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct DropWithdrawReason {
+    drop_withdraw_reason: Milestone,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 struct Eligibility {
     study_pop: Option<String>,
     sampling_method: Option<String>,
@@ -123,6 +203,47 @@ struct Eligibility {
     minimum_age: String,
     maximum_age: String,
     healthy_volunteers: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Events {
+    frequency_threshold: Option<String>,
+    default_vocab: Option<String>,
+    default_assessment: Option<String>,
+    category_list: Option<EventCategoryList>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct EventCategory {
+    title: String,
+    event_list: Option<EventList>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct EventCategoryList {
+    category: Vec<EventCategory>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Event {
+    // sub_title: Option<VocabTerm>, <-- TODO fix this?
+    sub_title: Option<String>,
+    assessment: Option<String>,
+    description: Option<String>,
+    counts: Option<EventCounts>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct EventCounts {
+    group_id: String,
+    subjects_affected: Option<u32>,
+    subjects_at_risk: Option<u32>,
+    events: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct EventList {
+    event: Vec<Event>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -166,6 +287,23 @@ struct Facility {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct Group {
+    group_id: Option<String>,
+    title: Option<String>,
+    description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct GroupId {
+    group_id: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct GroupList {
+    group: Vec<Group>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 struct Link {
     url: Option<String>,
     description: Option<Address>,
@@ -181,10 +319,100 @@ struct Location {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct Measure {
+    title: String,
+    description: Option<String>,
+    population: Option<String>,
+    units: Option<String>,
+    param: Option<String>,
+    dispersion: Option<String>,
+    units_analyzed: Option<String>,
+    analyzed_list: Option<AnalyzeList>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct MeasureAnalyzed {
+    units: String,
+    scope: String,
+    count_list: Option<CountList>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct MeasureCount {
+    group_id: String,
+    value: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct MeasureList {
+    measure: Vec<Measure>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Milestone {
+    title: Option<String>,
+    participants: Option<Vec<Participant>>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct MilestoneList {
+    milestone: Vec<Milestone>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Participant {
+    group_id: String,
+    count: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct ParticipantFlow {
+    recruitment_details: Option<String>,
+    pre_assignment_details: Option<String>,
+    group_list: Option<GroupList>,
+    period_list: Option<PeriodList>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct PatientData {
+    sharing_ipd: String,
+    ipd_description: Option<String>,
+    ipd_info_type: Option<Vec<String>>,
+    ipd_time_frame: Option<String>,
+    ipd_access_criteria: Option<String>,
+    ipd_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Period {
+    title: Option<String>,
+    milestone_list: Option<MilestoneList>,
+    drop_withdraw_reason_list: Option<DropWithdrawReason>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct PeriodList {
+    period: Vec<Period>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct PointOfContact {
+    name_or_title: String,
+    organization: Option<String>,
+    phone: Option<String>,
+    email: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 struct ProtocolOutcome {
     measure: String,
     time_frame: Option<String>,
     description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct OutcomeList {
+    outcome: Vec<ResultsOutcome>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -198,10 +426,41 @@ struct OversightInfo {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct PendingResult {
+    submitted: Option<Variable>,
+    returned: Option<Variable>,
+    submission_canceled: Option<Variable>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct ProvidedDocument {
+    document_type: Option<String>,
+    document_has_protocol: Option<String>,
+    document_has_icf: Option<String>,
+    document_has_sap: Option<String>,
+    document_date: Option<String>,
+    document_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct ProvidedDocuments {
+    provided_document: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 struct Reference {
     citation: Option<String>,
     #[serde(rename(deserialize = "PMID"))]
     pmid: Option<i32>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct ReportedEvents {
+    time_frame: Option<String>,
+    desc: Option<String>,
+    group_list: Option<GroupList>,
+    serious_events: Option<Events>,
+    other_events: Option<Events>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -222,6 +481,21 @@ struct ResponsibleParty {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct ResultsOutcome {
+    #[serde(rename(deserialize = "type"))]
+    results_type: String,
+    title: String,
+    description: Option<String>,
+    time_frame: Option<String>,
+    safety_issue: Option<String>,
+    posting_date: Option<String>,
+    population: Option<String>,
+    group_list: Option<GroupList>,
+    measure: Option<Measure>,
+    analysis_list: Option<AnalysisList>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 struct StudyDesignInfo {
     allocation: Option<String>,
     intervention_model: Option<String>,
@@ -231,6 +505,19 @@ struct StudyDesignInfo {
     time_perspective: Option<String>,
     masking: Option<String>,
     masking_description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct StudyDoc {
+    doc_id: Option<String>,
+    doc_type: Option<String>,
+    doc_url: Option<String>,
+    doc_comment: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct StudyDocs {
+    study_doc: Vec<StudyDoc>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -248,6 +535,17 @@ struct Sponsor {
 #[derive(Debug, Deserialize, PartialEq)]
 struct Textblock {
     textblock: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Variable {
+    #[serde(rename(deserialize = "type"))]
+    variable_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct VocabTerm {
+    vocab: Option<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
