@@ -1,4 +1,5 @@
 extern crate clap;
+extern crate dotenv;
 extern crate postgres;
 extern crate serde;
 extern crate spectral;
@@ -9,16 +10,16 @@ extern crate diesel;
 pub mod models;
 pub mod schema;
 
-//use quick_xml::events::Event;
-//use quick_xml::Reader;
-//use postgres::{Connection, TlsMode};
-
+use crate::schema::phase::dsl::phase;
+use crate::schema::phase::phase_name;
 use clap::{App, Arg};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
-use models::{DbNewStudy, DbStudy};
+use dotenv::dotenv;
+use models::{DbInsertPhase, DbInsertStudy, DbPhase, DbStudy};
 use quick_xml::de::from_reader;
 use serde::Deserialize;
+use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
@@ -74,7 +75,7 @@ struct Baseline {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-struct ClinicalStudy {
+pub struct ClinicalStudy {
     required_header: RequiredHeader,
     source: String,
     study_type: String,
@@ -593,9 +594,7 @@ pub fn get_args() -> MyResult<Config> {
 
 // --------------------------------------------------
 pub fn run(config: Config) -> MyResult<()> {
-    let dsn = "postgresql://kyclark@localhost/ct";
-    //let _conn = Connection::connect(dsn, TlsMode::None)?;
-    let conn = PgConnection::establish(&dsn)?;
+    let conn = connection()?;
 
     for (fnum, filename) in config.files.into_iter().enumerate() {
         println!("{:5}: {}", fnum + 1, &filename);
@@ -604,11 +603,31 @@ pub fn run(config: Config) -> MyResult<()> {
         //    "{}: {}",
         //    clinical_study.id_info.nct_id, clinical_study.brief_title
         //);
+        //
 
-        if let Ok(study) = find_or_create_study(&conn, &clinical_study.id_info.nct_id) {
+        //let new_phase_name = &clinical_study.phase; //.unwrap_or("N/A".to_string());
+        let new_phase_name = &clinical_study
+            .phase
+            .clone()
+            .unwrap_or("N/A".to_string())
+            .to_string();
+        let db_phase = find_or_create_phase(&conn, &new_phase_name)?;
+        println!(
+            "Phase \"{:?}\" ({})",
+            &clinical_study.phase, db_phase.phase_id
+        );
+
+        if let Ok(db_study) = find_or_create_study(
+            &conn,
+            &db_phase,
+            &clinical_study.id_info.nct_id,
+        ) {
+            update_study(&conn, &db_study, &clinical_study)?;
             println!(
-                "\tStudy {} ({})",
-                clinical_study.id_info.nct_id, study.study_id
+                "\tStudy {} \"{}\" ({})",
+                clinical_study.id_info.nct_id,
+                clinical_study.brief_title,
+                db_study.study_id
             );
         } else {
             println!("Failed to create {}", clinical_study.id_info.nct_id);
@@ -616,6 +635,22 @@ pub fn run(config: Config) -> MyResult<()> {
     }
 
     Ok(())
+}
+
+// --------------------------------------------------
+pub fn connection() -> MyResult<PgConnection> {
+    dotenv().ok();
+
+    let database_url =
+        env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+
+    match PgConnection::establish(&database_url) {
+        Ok(conn) => Ok(conn),
+        Err(err) => Err(From::from(format!(
+            "Error connecting to {}: {}",
+            database_url, err
+        ))),
+    }
 }
 
 // --------------------------------------------------
@@ -635,23 +670,77 @@ fn parse_file(filename: &str) -> MyResult<ClinicalStudy> {
 }
 
 // --------------------------------------------------
-pub fn find_or_create_study<'a>(conn: &PgConnection, new_nct_id: &'a str) -> DbResult<DbStudy> {
+// new_phase: &Option<str>,
+pub fn find_or_create_phase<'a>(
+    conn: &PgConnection,
+    new_phase_name: &'a str,
+) -> DbResult<DbPhase> {
+    //use crate::schema::study::dsl::*;
+
+    //let new_phase_name = new_phase.unwrap_or("N/A");
+    let results = phase
+        .filter(phase_name.eq(new_phase_name))
+        .first::<DbPhase>(conn);
+
+    match results {
+        Ok(s) => Ok(s),
+        _ => {
+            diesel::insert_into(phase)
+                .values(DbInsertPhase {
+                    phase_name: new_phase_name,
+                })
+                .execute(conn)
+                .expect("Error inserting phase");
+
+            phase
+                .filter(phase_name.eq(new_phase_name))
+                .first::<DbPhase>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
+pub fn find_or_create_study<'a>(
+    conn: &PgConnection,
+    db_phase: &DbPhase,
+    new_nct_id: &'a str,
+) -> DbResult<DbStudy> {
     use crate::schema::study::dsl::*;
     let results = study.filter(nct_id.eq(new_nct_id)).first::<DbStudy>(conn);
 
     match results {
         Ok(s) => Ok(s),
         _ => {
-            let new_study = DbNewStudy { nct_id: new_nct_id };
-
             diesel::insert_into(study)
-                .values(&new_study)
+                .values(DbInsertStudy {
+                    phase_id: &db_phase.phase_id,
+                    nct_id: new_nct_id,
+                })
                 .execute(conn)
                 .expect("Error inserting study");
 
             study.filter(nct_id.eq(new_nct_id)).first::<DbStudy>(conn)
         }
     }
+}
+
+// --------------------------------------------------
+pub fn update_study<'a>(
+    conn: &PgConnection,
+    db_study: &'a DbStudy,
+    new_study: &ClinicalStudy,
+) -> MyResult<()> {
+    use crate::schema::study::dsl::*;
+
+    diesel::update(db_study)
+        .set((
+            brief_title.eq(&new_study.brief_title),
+            org_study_id.eq(&new_study.id_info.org_study_id),
+        ))
+        .execute(conn)
+        .expect("Error updating study");
+
+    Ok(())
 }
 
 // --------------------------------------------------
