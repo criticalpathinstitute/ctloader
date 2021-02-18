@@ -1,10 +1,22 @@
 extern crate clap;
+extern crate postgres;
 extern crate serde;
+extern crate spectral;
+
+#[macro_use]
+extern crate diesel;
+
+pub mod models;
+pub mod schema;
 
 //use quick_xml::events::Event;
 //use quick_xml::Reader;
+//use postgres::{Connection, TlsMode};
 
 use clap::{App, Arg};
+use diesel::pg::PgConnection;
+use diesel::prelude::*;
+use models::{DbNewStudy, DbStudy};
 use quick_xml::de::from_reader;
 use serde::Deserialize;
 use std::error::Error;
@@ -13,6 +25,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
+type DbResult<T> = Result<T, diesel::result::Error>;
 
 #[derive(Debug)]
 pub struct Config {
@@ -125,8 +138,8 @@ struct ClinicalStudy {
     patient_data: Option<PatientData>,
     study_docs: Option<StudyDocs>,
     provided_document_section: Option<ProvidedDocuments>,
-    // pending_results: Option<Vec<PendingResult>>,
     clinical_results: Option<ClinicalResults>,
+    // pending_results: Option<Vec<PendingResult>>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -139,7 +152,7 @@ struct Address {
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Browse {
-    mesh_term: Option<Vec<String>>,
+    mesh_term: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -580,11 +593,26 @@ pub fn get_args() -> MyResult<Config> {
 
 // --------------------------------------------------
 pub fn run(config: Config) -> MyResult<()> {
+    let dsn = "postgresql://kyclark@localhost/ct";
+    //let _conn = Connection::connect(dsn, TlsMode::None)?;
+    let conn = PgConnection::establish(&dsn)?;
+
     for (fnum, filename) in config.files.into_iter().enumerate() {
-        println!("{}: {}", fnum + 1, &filename);
-        let study = parse_file(&filename)?;
-        println!("{}: {}", study.id_info.nct_id, study.brief_title);
-        println!("{:#?}", study);
+        println!("{:5}: {}", fnum + 1, &filename);
+        let clinical_study = parse_file(&filename)?;
+        //println!(
+        //    "{}: {}",
+        //    clinical_study.id_info.nct_id, clinical_study.brief_title
+        //);
+
+        if let Ok(study) = find_or_create_study(&conn, &clinical_study.id_info.nct_id) {
+            println!(
+                "\tStudy {} ({})",
+                clinical_study.id_info.nct_id, study.study_id
+            );
+        } else {
+            println!("Failed to create {}", clinical_study.id_info.nct_id);
+        }
     }
 
     Ok(())
@@ -603,5 +631,99 @@ fn parse_file(filename: &str) -> MyResult<ClinicalStudy> {
         }
     } else {
         Err(From::from(format!("'{}' not a valid file", filename)))
+    }
+}
+
+// --------------------------------------------------
+pub fn find_or_create_study<'a>(conn: &PgConnection, new_nct_id: &'a str) -> DbResult<DbStudy> {
+    use crate::schema::study::dsl::*;
+    let results = study.filter(nct_id.eq(new_nct_id)).first::<DbStudy>(conn);
+
+    match results {
+        Ok(s) => Ok(s),
+        _ => {
+            let new_study = DbNewStudy { nct_id: new_nct_id };
+
+            diesel::insert_into(study)
+                .values(&new_study)
+                .execute(conn)
+                .expect("Error inserting study");
+
+            study.filter(nct_id.eq(new_nct_id)).first::<DbStudy>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spectral::prelude::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_1() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let file = manifest_dir.join(PathBuf::from("data/test.xml"));
+        //let conf = Config {
+        //    files: vec![file.display().to_string()],
+        //};
+
+        let _res = match parse_file(&file.display().to_string()) {
+            Ok(study) => {
+                assert_eq!(
+                    study.required_header.url,
+                    "https://clinicaltrials.gov/show/NCT00000516"
+                );
+
+                assert_eq!(
+                    study.brief_title,
+                    "Studies of Left Ventricular Dysfunction (SOLVD)"
+                );
+
+                assert_eq!(study.id_info.nct_id, "NCT00000516");
+
+                assert_eq!(study.enrollment, Some(49));
+
+                assert_eq!(
+                    study.sponsors.lead_sponsor.agency,
+                    "National Heart, Lung, and Blood Institute (NHLBI)"
+                );
+
+                assert_eq!(
+                    study.source,
+                    "National Heart, Lung, and Blood Institute (NHLBI)"
+                );
+
+                assert_eq!(study.study_type, "Interventional");
+
+                assert_eq!(
+                    study.condition,
+                    Some(vec![
+                        "Cardiovascular Diseases".to_string(),
+                        "Coronary Disease".to_string(),
+                        "Heart Diseases".to_string(),
+                        "Heart Failure".to_string(),
+                        "Hypertension".to_string(),
+                        "Myocardial Ischemia".to_string()
+                    ]),
+                );
+
+                assert_that!(study.reference).is_some().has_length(54);
+
+                assert_that!(study.condition_browse).is_some();
+
+                if let Some(browse) = study.condition_browse {
+                    assert_that!(browse.mesh_term).has_length(5);
+                }
+
+                assert_that!(study.study_docs).is_some();
+
+                if let Some(docs) = study.study_docs {
+                    assert_that!(docs.study_doc).has_length(4);
+                }
+            }
+            Err(x) => panic!("{:?}", x),
+        };
     }
 }
