@@ -1,6 +1,7 @@
 <clinical_study>
   <!-- This xml conforms to an XML Schema at:
     https://clinicaltrials.gov/ct2/html/images/info/public.xsd -->
+  <keyword>hematologic malignancies (excluding Chronic Myeloid Leukemia)</keyword>
   <required_header>
     <download_date>ClinicalTrials.gov processed this data on December 04, 2020</download_date>
     <link_text>Link to the current ClinicalTrials.gov record.</link_text>
@@ -11,6 +12,8 @@
     <nct_id>NCT00000516</nct_id>
   </id_info>
   <brief_title>Studies of Left Ventricular Dysfunction (SOLVD)</brief_title>
+  <official_title>Studies of Left Ventricular Dysfunction (SOLVD)</official_title>
+  <acronym>SOLVD</acronym>
   <sponsors>
     <lead_sponsor>
       <agency>National Heart, Lung, and Blood Institute (NHLBI)</agency>

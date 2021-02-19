@@ -1,7 +1,9 @@
 extern crate chrono;
 extern crate clap;
 extern crate dotenv;
+extern crate dtparse;
 extern crate postgres;
+extern crate regex;
 extern crate serde;
 extern crate spectral;
 
@@ -17,14 +19,16 @@ use crate::schema::status::dsl::status;
 use crate::schema::status::status_name;
 use crate::schema::study_type::dsl::study_type;
 use crate::schema::study_type::study_type_name;
-use chrono::{NaiveDateTime, Utc};
+use chrono::{NaiveDate, NaiveDateTime, Utc};
 use clap::{App, Arg};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use dotenv::dotenv;
 use models::*;
 use quick_xml::de::from_reader;
+use regex::Regex;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::convert::TryInto;
 use std::env;
 use std::error::Error;
@@ -39,6 +43,7 @@ type DbResult<T> = Result<T, diesel::result::Error>;
 #[derive(Debug)]
 pub struct Config {
     files: Vec<String>,
+    force: bool,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -89,6 +94,7 @@ pub struct ClinicalStudy {
     study_type: String,
     phase: Option<String>,
     study_design_info: Option<StudyDesignInfo>,
+    brief_summary: Option<Textblock>,
     detailed_description: Option<Textblock>,
     has_expanded_access: Option<String>,
     overall_status: Option<String>,
@@ -593,11 +599,19 @@ pub fn get_args() -> MyResult<Config> {
                 .required(true)
                 .min_values(1),
         )
+        .arg(
+            Arg::with_name("force")
+                .long("force")
+                .help("Always update from file"),
+        )
         .get_matches();
 
     let files = matches.values_of_lossy("file").unwrap();
 
-    Ok(Config { files: files })
+    Ok(Config {
+        files: files,
+        force: matches.is_present("force"),
+    })
 }
 
 // --------------------------------------------------
@@ -605,7 +619,7 @@ pub fn run(config: Config) -> MyResult<()> {
     let conn = connection()?;
 
     for (fnum, filename) in config.files.into_iter().enumerate() {
-        let result = match process_file(&conn, &filename) {
+        let result = match process_file(&conn, &filename, &config.force) {
             Ok(db_study) => {
                 format!("{} ({})", db_study.nct_id, db_study.study_id)
             }
@@ -628,17 +642,23 @@ fn file_last_modified(path: &Path) -> MyResult<NaiveDateTime> {
 }
 
 // --------------------------------------------------
-fn process_file(conn: &PgConnection, filename: &str) -> MyResult<DbStudy> {
+fn process_file(
+    conn: &PgConnection,
+    filename: &str,
+    force: &bool,
+) -> MyResult<DbStudy> {
     let path = Path::new(&filename);
     if !path.is_file() {
         return Err(From::from(format!("'{}' not a valid file", filename)));
     }
 
-    if let (Ok(last_mod), Some(last_up)) =
-        (file_last_modified(&path), study_last_updated(&conn, &path))
-    {
-        if last_mod < last_up {
-            return Err(From::from("File older than data, skipping."));
+    if !force {
+        if let (Ok(last_mod), Some(last_up)) =
+            (file_last_modified(&path), study_last_updated(&conn, &path))
+        {
+            if last_mod < last_up {
+                return Err(From::from("File older than data, skipping."));
+            }
         }
     }
 
@@ -779,7 +799,7 @@ fn study_last_updated<'a>(
             let study_nct_id = &stem.to_string_lossy().to_string();
 
             match study.filter(nct_id.eq(study_nct_id)).first::<DbStudy>(conn) {
-                Ok(db_study) => db_study.last_updated,
+                Ok(db_study) => db_study.record_last_updated,
                 _ => None,
             }
         }
@@ -807,7 +827,7 @@ pub fn find_or_create_study<'a>(
                     study_type_id.eq(&db_study_type.study_type_id),
                     overall_status_id.eq(&db_overall_status.status_id),
                     last_known_status_id.eq(&db_last_known_status.status_id),
-                    last_updated.eq(Some(Utc::now().naive_utc())),
+                    record_last_updated.eq(Some(Utc::now().naive_utc())),
                 ))
                 .execute(conn)
                 .expect("Error updating study");
@@ -864,15 +884,106 @@ pub fn update_study<'a>(
 ) -> MyResult<()> {
     use crate::schema::study::dsl::*;
 
+    println!("all_text = {:?}", get_all_text(&new_study));
+
     diesel::update(db_study)
         .set((
             brief_title.eq(&new_study.brief_title),
+            official_title.eq(&new_study.official_title),
             org_study_id.eq(&new_study.id_info.org_study_id),
+            acronym.eq(&new_study.acronym),
+            source.eq(&new_study.source),
+            rank.eq(&new_study.rank),
+            brief_summary
+                .eq(extract_textblock(&new_study.brief_summary.as_ref())),
+            detailed_description.eq(extract_textblock(
+                &new_study.detailed_description.as_ref(),
+            )),
+            why_stopped.eq(&new_study.why_stopped),
+            has_expanded_access.eq(&new_study.has_expanded_access),
+            target_duration.eq(&new_study.target_duration),
+            biospec_retention.eq(&new_study.biospec_retention),
+            biospec_description
+                .eq(extract_textblock(&new_study.biospec_descr.as_ref())),
+            keywords.eq(&new_study
+                .keyword
+                .as_ref()
+                .and_then(|x| Some(x.join(", ")))),
+            enrollment.eq(&new_study.enrollment),
+            start_date.eq(extract_date(&new_study.start_date.as_ref())),
+            completion_date
+                .eq(extract_date(&new_study.completion_date.as_ref())),
+            all_text.eq(get_all_text(&new_study)),
         ))
         .execute(conn)
         .expect("Error updating study");
 
     Ok(())
+}
+
+// --------------------------------------------------
+fn get_all_text(study: &ClinicalStudy) -> Option<String> {
+    fn opt_text(val: Option<&String>) -> String {
+        val.unwrap_or(&"".to_string()).to_string()
+    }
+
+    fn tb_text(tb: Option<&Textblock>) -> String {
+        extract_textblock(&tb).unwrap_or("".to_string()).to_string()
+    }
+
+    let all_fields = vec![
+        study.brief_title.to_string(),
+        study.source.to_string(),
+        opt_text(study.official_title.as_ref()),
+        opt_text(study.acronym.as_ref()),
+        tb_text(study.brief_summary.as_ref()),
+        tb_text(study.detailed_description.as_ref()),
+    ];
+
+    let re1 = Regex::new(r"[^a-z0-9.]").unwrap();
+    let re2 = Regex::new(r"[.]$").unwrap();
+    let mut words: HashSet<String> = HashSet::new();
+    for fld in &all_fields {
+        for word in fld.split_whitespace() {
+            let clean = re1
+                .replace_all(
+                    &re2.replace_all(&word.to_ascii_lowercase(), ""),
+                    "",
+                )
+                .to_string();
+
+            if clean.len() > 2 {
+                words.insert(clean);
+            }
+        }
+    }
+
+    Some(words.into_iter().collect::<Vec<String>>().join(" "))
+}
+
+// --------------------------------------------------
+fn extract_textblock(val: &Option<&Textblock>) -> Option<String> {
+    match val {
+        Some(tb) => {
+            let re = Regex::new(r"\s+").unwrap();
+            Some(re.replace_all(&tb.textblock, " ").to_string())
+        }
+        _ => None,
+    }
+}
+
+// --------------------------------------------------
+fn extract_date(val: &Option<&String>) -> Option<NaiveDate> {
+    match val {
+        Some(date) => {
+            if let Ok((dt, _)) = dtparse::parse(date) {
+                Some(dt.date())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
 }
 
 // --------------------------------------------------

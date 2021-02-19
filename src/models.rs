@@ -2,7 +2,7 @@
 #![allow(clippy::all)]
 
 use crate::schema::*;
-use chrono::NaiveDateTime;
+use chrono::{NaiveDate, NaiveDateTime};
 
 #[derive(Queryable, Debug, Identifiable)]
 #[table_name = "phase"]
@@ -43,9 +43,24 @@ pub struct DbStudy {
     pub last_known_status_id: i32,
     pub nct_id: String,
     pub brief_title: Option<String>,
-    pub org_study_id: Option<String>,
     pub official_title: Option<String>,
-    pub last_updated: Option<NaiveDateTime>,
+    pub org_study_id: Option<String>,
+    pub acronym: Option<String>,
+    pub source: Option<String>,
+    pub rank: Option<String>,
+    pub brief_summary: Option<String>,
+    pub detailed_description: Option<String>,
+    pub why_stopped: Option<String>,
+    pub has_expanded_access: Option<String>,
+    pub target_duration: Option<String>,
+    pub biospec_retention: Option<String>,
+    pub biospec_description: Option<String>,
+    pub keywords: Option<String>,
+    pub enrollment: Option<i32>,
+    pub start_date: Option<NaiveDate>,
+    pub completion_date: Option<NaiveDate>,
+    pub all_text: Option<String>,
+    pub record_last_updated: Option<NaiveDateTime>,
 }
 
 #[derive(Insertable, Debug)]
