@@ -12,11 +12,16 @@ pub mod schema;
 
 use crate::schema::phase::dsl::phase;
 use crate::schema::phase::phase_name;
+use crate::schema::study_type::dsl::study_type;
+use crate::schema::study_type::study_type_name;
 use clap::{App, Arg};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use dotenv::dotenv;
-use models::{DbInsertPhase, DbInsertStudy, DbPhase, DbStudy};
+use models::{
+    DbPhase, DbPhaseInsert, DbStudy, DbStudyInsert, DbStudyType,
+    DbStudyTypeInsert,
+};
 use quick_xml::de::from_reader;
 use serde::Deserialize;
 use std::env;
@@ -612,14 +617,14 @@ pub fn run(config: Config) -> MyResult<()> {
             .unwrap_or("N/A".to_string())
             .to_string();
         let db_phase = find_or_create_phase(&conn, &new_phase_name)?;
-        println!(
-            "Phase \"{:?}\" ({})",
-            &clinical_study.phase, db_phase.phase_id
-        );
+
+        let db_study_type =
+            find_or_create_study_type(&conn, &clinical_study.study_type)?;
 
         if let Ok(db_study) = find_or_create_study(
             &conn,
             &db_phase,
+            &db_study_type,
             &clinical_study.id_info.nct_id,
         ) {
             update_study(&conn, &db_study, &clinical_study)?;
@@ -670,14 +675,10 @@ fn parse_file(filename: &str) -> MyResult<ClinicalStudy> {
 }
 
 // --------------------------------------------------
-// new_phase: &Option<str>,
 pub fn find_or_create_phase<'a>(
     conn: &PgConnection,
     new_phase_name: &'a str,
 ) -> DbResult<DbPhase> {
-    //use crate::schema::study::dsl::*;
-
-    //let new_phase_name = new_phase.unwrap_or("N/A");
     let results = phase
         .filter(phase_name.eq(new_phase_name))
         .first::<DbPhase>(conn);
@@ -686,7 +687,7 @@ pub fn find_or_create_phase<'a>(
         Ok(s) => Ok(s),
         _ => {
             diesel::insert_into(phase)
-                .values(DbInsertPhase {
+                .values(DbPhaseInsert {
                     phase_name: new_phase_name,
                 })
                 .execute(conn)
@@ -703,23 +704,60 @@ pub fn find_or_create_phase<'a>(
 pub fn find_or_create_study<'a>(
     conn: &PgConnection,
     db_phase: &DbPhase,
+    db_study_type: &DbStudyType,
     new_nct_id: &'a str,
 ) -> DbResult<DbStudy> {
     use crate::schema::study::dsl::*;
     let results = study.filter(nct_id.eq(new_nct_id)).first::<DbStudy>(conn);
 
     match results {
-        Ok(s) => Ok(s),
+        Ok(db_study) => {
+            diesel::update(&db_study)
+                .set((
+                    phase_id.eq(&db_phase.phase_id),
+                    study_type_id.eq(&db_study_type.study_type_id),
+                ))
+                .execute(conn)
+                .expect("Error updating study");
+            Ok(db_study)
+        }
         _ => {
             diesel::insert_into(study)
-                .values(DbInsertStudy {
+                .values(DbStudyInsert {
                     phase_id: &db_phase.phase_id,
+                    study_type_id: db_study_type.study_type_id,
                     nct_id: new_nct_id,
                 })
                 .execute(conn)
                 .expect("Error inserting study");
 
             study.filter(nct_id.eq(new_nct_id)).first::<DbStudy>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
+pub fn find_or_create_study_type<'a>(
+    conn: &PgConnection,
+    new_study_type_name: &'a str,
+) -> DbResult<DbStudyType> {
+    let results = study_type
+        .filter(study_type_name.eq(new_study_type_name))
+        .first::<DbStudyType>(conn);
+
+    match results {
+        Ok(s) => Ok(s),
+        _ => {
+            diesel::insert_into(study_type)
+                .values(DbStudyTypeInsert {
+                    study_type_name: new_study_type_name.to_string(),
+                })
+                .execute(conn)
+                .expect("Error inserting study_type");
+
+            study_type
+                .filter(study_type_name.eq(new_study_type_name))
+                .first::<DbStudyType>(conn)
         }
     }
 }

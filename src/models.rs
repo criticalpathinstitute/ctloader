@@ -13,7 +13,7 @@ pub struct DbPhase {
 
 #[derive(Insertable, Debug)]
 #[table_name = "phase"]
-pub struct DbInsertPhase<'a> {
+pub struct DbPhaseInsert<'a> {
     pub phase_name: &'a str,
 }
 
@@ -22,6 +22,7 @@ pub struct DbInsertPhase<'a> {
 #[primary_key(study_id)]
 pub struct DbStudy {
     pub study_id: i32,
+    pub study_type_id: i32,
     pub phase_id: i32,
     pub nct_id: String,
     pub brief_title: Option<String>,
@@ -31,7 +32,22 @@ pub struct DbStudy {
 
 #[derive(Insertable, Debug)]
 #[table_name = "study"]
-pub struct DbInsertStudy<'a> {
+pub struct DbStudyInsert<'a> {
     pub phase_id: &'a i32,
+    pub study_type_id: i32,
     pub nct_id: &'a str,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
+#[table_name = "study_type"]
+#[primary_key(study_type_id)]
+pub struct DbStudyType {
+    pub study_type_id: i32,
+    pub study_type_name: String,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_type"]
+pub struct DbStudyTypeInsert {
+    pub study_type_name: String,
 }

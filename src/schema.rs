@@ -8,6 +8,7 @@ table! {
 table! {
     study (study_id) {
         study_id -> Int4,
+        study_type_id -> Int4,
         phase_id -> Int4,
         nct_id -> Varchar,
         brief_title -> Nullable<Text>,
@@ -16,9 +17,14 @@ table! {
     }
 }
 
-joinable!(study -> phase (phase_id));
+table! {
+    study_type (study_type_id) {
+        study_type_id -> Int4,
+        study_type_name -> Varchar,
+    }
+}
 
-allow_tables_to_appear_in_same_query!(
-    phase,
-    study,
-);
+joinable!(study -> phase (phase_id));
+joinable!(study -> study_type (study_type_id));
+
+allow_tables_to_appear_in_same_query!(phase, study, study_type,);
