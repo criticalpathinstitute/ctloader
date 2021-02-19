@@ -1,3 +1,4 @@
+extern crate chrono;
 extern crate clap;
 extern crate dotenv;
 extern crate postgres;
@@ -12,23 +13,25 @@ pub mod schema;
 
 use crate::schema::phase::dsl::phase;
 use crate::schema::phase::phase_name;
+use crate::schema::status::dsl::status;
+use crate::schema::status::status_name;
 use crate::schema::study_type::dsl::study_type;
 use crate::schema::study_type::study_type_name;
+use chrono::{NaiveDateTime, Utc};
 use clap::{App, Arg};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use dotenv::dotenv;
-use models::{
-    DbPhase, DbPhaseInsert, DbStudy, DbStudyInsert, DbStudyType,
-    DbStudyTypeInsert,
-};
+use models::*;
 use quick_xml::de::from_reader;
 use serde::Deserialize;
+use std::convert::TryInto;
 use std::env;
 use std::error::Error;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::BufReader;
 use std::path::Path;
+use std::time::UNIX_EPOCH;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 type DbResult<T> = Result<T, diesel::result::Error>;
@@ -602,44 +605,87 @@ pub fn run(config: Config) -> MyResult<()> {
     let conn = connection()?;
 
     for (fnum, filename) in config.files.into_iter().enumerate() {
-        println!("{:5}: {}", fnum + 1, &filename);
-        let clinical_study = parse_file(&filename)?;
-        //println!(
-        //    "{}: {}",
-        //    clinical_study.id_info.nct_id, clinical_study.brief_title
-        //);
-        //
+        let result = match process_file(&conn, &filename) {
+            Ok(db_study) => {
+                format!("{} ({})", db_study.nct_id, db_study.study_id)
+            }
+            Err(err) => err.to_string(),
+        };
 
-        //let new_phase_name = &clinical_study.phase; //.unwrap_or("N/A".to_string());
-        let new_phase_name = &clinical_study
-            .phase
-            .clone()
-            .unwrap_or("N/A".to_string())
-            .to_string();
-        let db_phase = find_or_create_phase(&conn, &new_phase_name)?;
-
-        let db_study_type =
-            find_or_create_study_type(&conn, &clinical_study.study_type)?;
-
-        if let Ok(db_study) = find_or_create_study(
-            &conn,
-            &db_phase,
-            &db_study_type,
-            &clinical_study.id_info.nct_id,
-        ) {
-            update_study(&conn, &db_study, &clinical_study)?;
-            println!(
-                "\tStudy {} \"{}\" ({})",
-                clinical_study.id_info.nct_id,
-                clinical_study.brief_title,
-                db_study.study_id
-            );
-        } else {
-            println!("Failed to create {}", clinical_study.id_info.nct_id);
-        }
+        println!("{:5}: {} => {}", fnum + 1, &filename, &result);
     }
 
     Ok(())
+}
+
+// --------------------------------------------------
+fn file_last_modified(path: &Path) -> MyResult<NaiveDateTime> {
+    let time = fs::metadata(path)?.modified()?.duration_since(UNIX_EPOCH)?;
+    Ok(NaiveDateTime::from_timestamp(
+        time.as_secs().try_into().unwrap(),
+        0,
+    ))
+}
+
+// --------------------------------------------------
+fn process_file(conn: &PgConnection, filename: &str) -> MyResult<DbStudy> {
+    let path = Path::new(&filename);
+    if !path.is_file() {
+        return Err(From::from(format!("'{}' not a valid file", filename)));
+    }
+
+    if let (Ok(last_mod), Some(last_up)) =
+        (file_last_modified(&path), study_last_updated(&conn, &path))
+    {
+        if last_mod < last_up {
+            return Err(From::from("File older than data, skipping."));
+        }
+    }
+
+    let clinical_study = parse_xml(&path)?;
+    let new_phase_name = &clinical_study
+        .phase
+        .clone()
+        .unwrap_or("N/A".to_string())
+        .to_string();
+    let db_phase = find_or_create_phase(&conn, &new_phase_name)?;
+
+    let db_study_type =
+        find_or_create_study_type(&conn, &clinical_study.study_type)?;
+
+    let new_overall_status = &clinical_study
+        .overall_status
+        .clone()
+        .unwrap_or("Unknown status".to_string())
+        .to_string();
+
+    let db_overall_status = find_or_create_status(&conn, &new_overall_status)?;
+
+    let new_last_known_status = &clinical_study
+        .last_known_status
+        .clone()
+        .unwrap_or("Unknown status".to_string())
+        .to_string();
+
+    let db_last_known_status =
+        find_or_create_status(&conn, &new_last_known_status)?;
+
+    if let Ok(db_study) = find_or_create_study(
+        &conn,
+        &db_phase,
+        &db_study_type,
+        &db_overall_status,
+        &db_last_known_status,
+        &clinical_study.id_info.nct_id,
+    ) {
+        update_study(&conn, &db_study, &clinical_study)?;
+        Ok(db_study)
+    } else {
+        Err(From::from(format!(
+            "Failed to create {}",
+            clinical_study.id_info.nct_id
+        )))
+    }
 }
 
 // --------------------------------------------------
@@ -659,18 +705,13 @@ pub fn connection() -> MyResult<PgConnection> {
 }
 
 // --------------------------------------------------
-fn parse_file(filename: &str) -> MyResult<ClinicalStudy> {
-    let path = Path::new(&filename);
-    if path.is_file() {
-        let file = File::open(path)?;
-        let mut reader = BufReader::new(file);
+fn parse_xml(path: &Path) -> MyResult<ClinicalStudy> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
 
-        match from_reader(&mut reader) {
-            Ok(study) => Ok(study),
-            Err(err) => Err(From::from(format!("Failed to parse: {:?}", err))),
-        }
-    } else {
-        Err(From::from(format!("'{}' not a valid file", filename)))
+    match from_reader(&mut reader) {
+        Ok(study) => Ok(study),
+        Err(err) => Err(From::from(format!("Failed to parse: {:?}", err))),
     }
 }
 
@@ -701,10 +742,58 @@ pub fn find_or_create_phase<'a>(
 }
 
 // --------------------------------------------------
+pub fn find_or_create_status<'a>(
+    conn: &PgConnection,
+    new_status_name: &'a str,
+) -> DbResult<DbStatus> {
+    let results = status
+        .filter(status_name.eq(new_status_name))
+        .first::<DbStatus>(conn);
+
+    match results {
+        Ok(s) => Ok(s),
+        _ => {
+            diesel::insert_into(status)
+                .values(DbStatusInsert {
+                    status_name: new_status_name.to_string(),
+                })
+                .execute(conn)
+                .expect("Error inserting status");
+
+            status
+                .filter(status_name.eq(new_status_name))
+                .first::<DbStatus>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
+fn study_last_updated<'a>(
+    conn: &PgConnection,
+    path: &Path,
+) -> Option<NaiveDateTime> {
+    use crate::schema::study::dsl::*;
+
+    match path.file_stem() {
+        Some(stem) => {
+            let study_nct_id = &stem.to_string_lossy().to_string();
+
+            match study.filter(nct_id.eq(study_nct_id)).first::<DbStudy>(conn) {
+                Ok(db_study) => db_study.last_updated,
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+// --------------------------------------------------
 pub fn find_or_create_study<'a>(
     conn: &PgConnection,
     db_phase: &DbPhase,
     db_study_type: &DbStudyType,
+    db_overall_status: &DbStatus,
+    db_last_known_status: &DbStatus,
     new_nct_id: &'a str,
 ) -> DbResult<DbStudy> {
     use crate::schema::study::dsl::*;
@@ -716,6 +805,9 @@ pub fn find_or_create_study<'a>(
                 .set((
                     phase_id.eq(&db_phase.phase_id),
                     study_type_id.eq(&db_study_type.study_type_id),
+                    overall_status_id.eq(&db_overall_status.status_id),
+                    last_known_status_id.eq(&db_last_known_status.status_id),
+                    last_updated.eq(Some(Utc::now().naive_utc())),
                 ))
                 .execute(conn)
                 .expect("Error updating study");
@@ -726,6 +818,8 @@ pub fn find_or_create_study<'a>(
                 .values(DbStudyInsert {
                     phase_id: &db_phase.phase_id,
                     study_type_id: db_study_type.study_type_id,
+                    overall_status_id: db_overall_status.status_id,
+                    last_known_status_id: db_last_known_status.status_id,
                     nct_id: new_nct_id,
                 })
                 .execute(conn)
@@ -796,7 +890,7 @@ mod tests {
         //    files: vec![file.display().to_string()],
         //};
 
-        let _res = match parse_file(&file.display().to_string()) {
+        let _res = match parse_xml(&file.display().to_string()) {
             Ok(study) => {
                 assert_eq!(
                     study.required_header.url,

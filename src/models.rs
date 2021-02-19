@@ -2,6 +2,7 @@
 #![allow(clippy::all)]
 
 use crate::schema::*;
+use chrono::NaiveDateTime;
 
 #[derive(Queryable, Debug, Identifiable)]
 #[table_name = "phase"]
@@ -18,16 +19,33 @@ pub struct DbPhaseInsert<'a> {
 }
 
 #[derive(Queryable, Debug, Identifiable)]
+#[table_name = "status"]
+#[primary_key(status_id)]
+pub struct DbStatus {
+    pub status_id: i32,
+    pub status_name: String,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "status"]
+pub struct DbStatusInsert {
+    pub status_name: String,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
 #[table_name = "study"]
 #[primary_key(study_id)]
 pub struct DbStudy {
     pub study_id: i32,
     pub study_type_id: i32,
     pub phase_id: i32,
+    pub overall_status_id: i32,
+    pub last_known_status_id: i32,
     pub nct_id: String,
     pub brief_title: Option<String>,
     pub org_study_id: Option<String>,
     pub official_title: Option<String>,
+    pub last_updated: Option<NaiveDateTime>,
 }
 
 #[derive(Insertable, Debug)]
@@ -35,6 +53,8 @@ pub struct DbStudy {
 pub struct DbStudyInsert<'a> {
     pub phase_id: &'a i32,
     pub study_type_id: i32,
+    pub overall_status_id: i32,
+    pub last_known_status_id: i32,
     pub nct_id: &'a str,
 }
 
