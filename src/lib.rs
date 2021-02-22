@@ -13,10 +13,15 @@ extern crate diesel;
 pub mod models;
 pub mod schema;
 
+use crate::schema::condition::condition_name;
+use crate::schema::condition::dsl::condition;
 use crate::schema::phase::dsl::phase;
 use crate::schema::phase::phase_name;
 use crate::schema::status::dsl::status;
 use crate::schema::status::status_name;
+use crate::schema::study_to_condition::condition_id;
+use crate::schema::study_to_condition::dsl::study_to_condition;
+use crate::schema::study_to_condition::study_id;
 use crate::schema::study_type::dsl::study_type;
 use crate::schema::study_type::study_type_name;
 use chrono::{NaiveDate, NaiveDateTime, Utc};
@@ -699,6 +704,20 @@ fn process_file(
         &clinical_study.id_info.nct_id,
     ) {
         update_study(&conn, &db_study, &clinical_study)?;
+
+        // Conditions
+        if let Some(new_conditions) = &clinical_study.condition {
+            for new_condition in new_conditions {
+                let db_condition =
+                    find_or_create_condition(&conn, &new_condition)?;
+                find_or_create_study_to_condition(
+                    &conn,
+                    &db_study,
+                    &db_condition,
+                )?;
+            }
+        }
+
         Ok(db_study)
     } else {
         Err(From::from(format!(
@@ -732,6 +751,62 @@ fn parse_xml(path: &Path) -> MyResult<ClinicalStudy> {
     match from_reader(&mut reader) {
         Ok(study) => Ok(study),
         Err(err) => Err(From::from(format!("Failed to parse: {:?}", err))),
+    }
+}
+
+// --------------------------------------------------
+pub fn find_or_create_condition<'a>(
+    conn: &PgConnection,
+    new_condition_name: &'a str,
+) -> DbResult<DbCondition> {
+    let results = condition
+        .filter(condition_name.eq(new_condition_name))
+        .first::<DbCondition>(conn);
+
+    match results {
+        Ok(c) => Ok(c),
+        _ => {
+            diesel::insert_into(condition)
+                .values(DbConditionInsert {
+                    condition_name: new_condition_name.to_string(),
+                })
+                .execute(conn)
+                .expect("Error inserting condition");
+
+            condition
+                .filter(condition_name.eq(new_condition_name))
+                .first::<DbCondition>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
+pub fn find_or_create_study_to_condition(
+    conn: &PgConnection,
+    new_study: &DbStudy,
+    new_condition: &DbCondition,
+) -> DbResult<DbStudyToCondition> {
+    let results = study_to_condition
+        .filter(study_id.eq(new_study.study_id))
+        .filter(condition_id.eq(new_condition.condition_id))
+        .first::<DbStudyToCondition>(conn);
+
+    match results {
+        Ok(c2s) => Ok(c2s),
+        _ => {
+            diesel::insert_into(study_to_condition)
+                .values(DbStudyToConditionInsert {
+                    study_id: new_study.study_id,
+                    condition_id: new_condition.condition_id,
+                })
+                .execute(conn)
+                .expect("Error inserting condition_to_study");
+
+            study_to_condition
+                .filter(study_id.eq(new_study.study_id))
+                .filter(condition_id.eq(new_condition.condition_id))
+                .first::<DbStudyToCondition>(conn)
+        }
     }
 }
 
@@ -884,7 +959,7 @@ pub fn update_study<'a>(
 ) -> MyResult<()> {
     use crate::schema::study::dsl::*;
 
-    println!("all_text = {:?}", get_all_text(&new_study));
+    // println!("all_text = {:?}", get_all_text(&new_study));
 
     diesel::update(db_study)
         .set((
@@ -931,9 +1006,20 @@ fn get_all_text(study: &ClinicalStudy) -> Option<String> {
         extract_textblock(&tb).unwrap_or("".to_string()).to_string()
     }
 
+    fn vec_text(val: Option<&Vec<String>>) -> String {
+        match val {
+            Some(items) => items.join(" ").to_string(),
+            _ => "".to_string(),
+        }
+    }
+
     let all_fields = vec![
+        study.id_info.nct_id.to_string(),
         study.brief_title.to_string(),
+        opt_text(study.official_title.as_ref()),
         study.source.to_string(),
+        vec_text(study.condition.as_ref()),
+        vec_text(study.keyword.as_ref()),
         opt_text(study.official_title.as_ref()),
         opt_text(study.acronym.as_ref()),
         tb_text(study.brief_summary.as_ref()),

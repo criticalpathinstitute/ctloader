@@ -5,6 +5,20 @@ use crate::schema::*;
 use chrono::{NaiveDate, NaiveDateTime};
 
 #[derive(Queryable, Debug, Identifiable)]
+#[primary_key(condition_id)]
+#[table_name = "condition"]
+pub struct DbCondition {
+    pub condition_id: i32,
+    pub condition_name: String,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "condition"]
+pub struct DbConditionInsert {
+    pub condition_name: String,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
 #[table_name = "phase"]
 #[primary_key(phase_id)]
 pub struct DbPhase {
@@ -85,4 +99,20 @@ pub struct DbStudyType {
 #[table_name = "study_type"]
 pub struct DbStudyTypeInsert {
     pub study_type_name: String,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
+#[primary_key(study_to_condition_id)]
+#[table_name = "study_to_condition"]
+pub struct DbStudyToCondition {
+    pub study_to_condition_id: i32,
+    pub study_id: i32,
+    pub condition_id: i32,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_to_condition"]
+pub struct DbStudyToConditionInsert {
+    pub study_id: i32,
+    pub condition_id: i32,
 }
