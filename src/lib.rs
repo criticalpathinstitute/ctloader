@@ -13,17 +13,12 @@ extern crate diesel;
 pub mod models;
 pub mod schema;
 
-use crate::schema::condition::condition_name;
-use crate::schema::condition::dsl::condition;
-use crate::schema::phase::dsl::phase;
-use crate::schema::phase::phase_name;
-use crate::schema::status::dsl::status;
-use crate::schema::status::status_name;
-use crate::schema::study_to_condition::condition_id;
-use crate::schema::study_to_condition::dsl::study_to_condition;
-use crate::schema::study_to_condition::study_id;
-use crate::schema::study_type::dsl::study_type;
-use crate::schema::study_type::study_type_name;
+use crate::schema::condition;
+use crate::schema::phase;
+use crate::schema::status;
+use crate::schema::study_doc;
+use crate::schema::study_to_condition;
+use crate::schema::study_type;
 use chrono::{NaiveDate, NaiveDateTime, Utc};
 use clap::{App, Arg};
 use diesel::pg::PgConnection;
@@ -541,7 +536,7 @@ struct StudyDesignInfo {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-struct StudyDoc {
+pub struct StudyDoc {
     doc_id: Option<String>,
     doc_type: Option<String>,
     doc_url: Option<String>,
@@ -706,15 +701,29 @@ fn process_file(
         update_study(&conn, &db_study, &clinical_study)?;
 
         // Conditions
+        delete_study_conditions(&conn, &db_study)?;
         if let Some(new_conditions) = &clinical_study.condition {
             for new_condition in new_conditions {
                 let db_condition =
                     find_or_create_condition(&conn, &new_condition)?;
+
                 find_or_create_study_to_condition(
                     &conn,
                     &db_study,
                     &db_condition,
                 )?;
+            }
+        }
+
+        // StudyDocs
+        delete_study_docs(&conn, &db_study)?;
+        if let Some(new_study_docs) = &clinical_study.study_docs {
+            for new_study_doc in new_study_docs.study_doc.iter() {
+                match find_or_create_study_doc(&conn, &db_study, &new_study_doc)
+                {
+                    Ok(doc) => println!("Created doc"),
+                    Err(e) => println!("Err {:?}", new_study_doc),
+                }
             }
         }
 
@@ -759,25 +768,120 @@ pub fn find_or_create_condition<'a>(
     conn: &PgConnection,
     new_condition_name: &'a str,
 ) -> DbResult<DbCondition> {
-    let results = condition
-        .filter(condition_name.eq(new_condition_name))
+    let results = condition::table
+        .filter(condition::condition_name.eq(new_condition_name))
         .first::<DbCondition>(conn);
 
     match results {
         Ok(c) => Ok(c),
         _ => {
-            diesel::insert_into(condition)
+            diesel::insert_into(condition::table)
                 .values(DbConditionInsert {
                     condition_name: new_condition_name.to_string(),
                 })
                 .execute(conn)
                 .expect("Error inserting condition");
 
-            condition
-                .filter(condition_name.eq(new_condition_name))
+            condition::table
+                .filter(condition::condition_name.eq(new_condition_name))
                 .first::<DbCondition>(conn)
         }
     }
+}
+
+// --------------------------------------------------
+pub fn find_or_create_study_doc(
+    conn: &PgConnection,
+    new_study: &DbStudy,
+    new_doc: &StudyDoc,
+) -> DbResult<DbStudyDoc> {
+    let results = study_doc::table
+        .filter(study_doc::study_id.eq(&new_study.study_id))
+        .filter(study_doc::doc_id.eq(&new_doc.doc_id))
+        .filter(study_doc::doc_type.eq(&new_doc.doc_type))
+        .filter(study_doc::doc_url.eq(&new_doc.doc_url))
+        .filter(study_doc::doc_comment.eq(&new_doc.doc_comment))
+        .first::<DbStudyDoc>(conn);
+
+    fn opt_text(val: Option<&String>) -> Option<String> {
+        Some(val.unwrap_or(&"".to_string()).to_string())
+    }
+
+    match results {
+        Ok(c) => Ok(c),
+        _ => {
+            diesel::insert_into(study_doc::table)
+                .values(DbStudyDocInsert {
+                    study_id: new_study.study_id,
+                    doc_id: opt_text(new_doc.doc_id.as_ref()),
+                    doc_type: opt_text(new_doc.doc_type.as_ref()),
+                    doc_url: opt_text(new_doc.doc_url.as_ref()),
+                    doc_comment: opt_text(new_doc.doc_comment.as_ref()),
+                })
+                .execute(conn)
+                .expect("Error inserting study_doc");
+
+            study_doc::table
+                .filter(study_doc::study_id.eq(&new_study.study_id))
+                .filter(study_doc::doc_id.eq(&new_doc.doc_id))
+                .filter(study_doc::doc_type.eq(&new_doc.doc_type))
+                .filter(study_doc::doc_url.eq(&new_doc.doc_url))
+                .filter(study_doc::doc_comment.eq(&new_doc.doc_comment))
+                .first::<DbStudyDoc>(conn)
+        }
+    }
+
+    //let find = study_doc::table
+    //    .filter(study_doc::study_id.eq(&new_study.study_id))
+    //    .filter(study_doc::doc_id.eq(new_doc.doc_id.as_ref()))
+    //    .filter(study_doc::doc_type.eq(new_doc.doc_type.as_ref()))
+    //    .filter(study_doc::doc_url.eq(new_doc.doc_url.as_ref()))
+    //    .filter(study_doc::doc_comment.eq(new_doc.doc_comment.as_ref()));
+
+    //let results = find.first::<DbStudyDoc>(conn);
+    //match results {
+    //    Ok(c) => Ok(c),
+    //    _ => {
+    //        diesel::insert_into(study_doc::table)
+    //            .values(DbStudyDocInsert {
+    //                study_id: new_study.study_id,
+    //                doc_id: new_doc.doc_id.as_ref(),
+    //                doc_type: new_doc.doc_type.as_ref(),
+    //                doc_url: new_doc.doc_url.as_ref(),
+    //                doc_comment: new_doc.doc_comment.as_ref(),
+    //            })
+    //            .execute(conn)
+    //            .expect("Error inserting study_doc");
+    //        find.first::<DbStudyDoc>(conn)
+    //    }
+    //}
+}
+
+// --------------------------------------------------
+pub fn delete_study_conditions(
+    conn: &PgConnection,
+    new_study: &DbStudy,
+) -> DbResult<()> {
+    diesel::delete(
+        study_to_condition::table
+            .filter(study_to_condition::study_id.eq(new_study.study_id)),
+    )
+    .execute(conn)?;
+
+    Ok(())
+}
+
+// --------------------------------------------------
+pub fn delete_study_docs(
+    conn: &PgConnection,
+    new_study: &DbStudy,
+) -> DbResult<()> {
+    diesel::delete(
+        study_doc::table.filter(study_doc::study_id.eq(new_study.study_id)),
+    )
+    .execute(conn)?;
+
+    Ok(())
 }
 
 // --------------------------------------------------
@@ -786,15 +890,15 @@ pub fn find_or_create_study_to_condition(
     new_study: &DbStudy,
     new_condition: &DbCondition,
 ) -> DbResult<DbStudyToCondition> {
-    let results = study_to_condition
-        .filter(study_id.eq(new_study.study_id))
-        .filter(condition_id.eq(new_condition.condition_id))
+    let results = study_to_condition::table
+        .filter(study_to_condition::study_id.eq(new_study.study_id))
+        .filter(study_to_condition::condition_id.eq(new_condition.condition_id))
         .first::<DbStudyToCondition>(conn);
 
     match results {
         Ok(c2s) => Ok(c2s),
         _ => {
-            diesel::insert_into(study_to_condition)
+            diesel::insert_into(study_to_condition::table)
                 .values(DbStudyToConditionInsert {
                     study_id: new_study.study_id,
                     condition_id: new_condition.condition_id,
@@ -802,9 +906,12 @@ pub fn find_or_create_study_to_condition(
                 .execute(conn)
                 .expect("Error inserting condition_to_study");
 
-            study_to_condition
-                .filter(study_id.eq(new_study.study_id))
-                .filter(condition_id.eq(new_condition.condition_id))
+            study_to_condition::table
+                .filter(study_to_condition::study_id.eq(new_study.study_id))
+                .filter(
+                    study_to_condition::condition_id
+                        .eq(new_condition.condition_id),
+                )
                 .first::<DbStudyToCondition>(conn)
         }
     }
@@ -815,22 +922,22 @@ pub fn find_or_create_phase<'a>(
     conn: &PgConnection,
     new_phase_name: &'a str,
 ) -> DbResult<DbPhase> {
-    let results = phase
-        .filter(phase_name.eq(new_phase_name))
+    let results = phase::table
+        .filter(phase::phase_name.eq(new_phase_name))
         .first::<DbPhase>(conn);
 
     match results {
         Ok(s) => Ok(s),
         _ => {
-            diesel::insert_into(phase)
+            diesel::insert_into(phase::table)
                 .values(DbPhaseInsert {
                     phase_name: new_phase_name,
                 })
                 .execute(conn)
                 .expect("Error inserting phase");
 
-            phase
-                .filter(phase_name.eq(new_phase_name))
+            phase::table
+                .filter(phase::phase_name.eq(new_phase_name))
                 .first::<DbPhase>(conn)
         }
     }
@@ -841,22 +948,22 @@ pub fn find_or_create_status<'a>(
     conn: &PgConnection,
     new_status_name: &'a str,
 ) -> DbResult<DbStatus> {
-    let results = status
-        .filter(status_name.eq(new_status_name))
+    let results = status::table
+        .filter(status::status_name.eq(new_status_name))
         .first::<DbStatus>(conn);
 
     match results {
         Ok(s) => Ok(s),
         _ => {
-            diesel::insert_into(status)
+            diesel::insert_into(status::table)
                 .values(DbStatusInsert {
                     status_name: new_status_name.to_string(),
                 })
                 .execute(conn)
                 .expect("Error inserting status");
 
-            status
-                .filter(status_name.eq(new_status_name))
+            status::table
+                .filter(status::status_name.eq(new_status_name))
                 .first::<DbStatus>(conn)
         }
     }
@@ -930,22 +1037,22 @@ pub fn find_or_create_study_type<'a>(
     conn: &PgConnection,
     new_study_type_name: &'a str,
 ) -> DbResult<DbStudyType> {
-    let results = study_type
-        .filter(study_type_name.eq(new_study_type_name))
+    let results = study_type::table
+        .filter(study_type::study_type_name.eq(new_study_type_name))
         .first::<DbStudyType>(conn);
 
     match results {
         Ok(s) => Ok(s),
         _ => {
-            diesel::insert_into(study_type)
+            diesel::insert_into(study_type::table)
                 .values(DbStudyTypeInsert {
                     study_type_name: new_study_type_name.to_string(),
                 })
                 .execute(conn)
                 .expect("Error inserting study_type");
 
-            study_type
-                .filter(study_type_name.eq(new_study_type_name))
+            study_type::table
+                .filter(study_type::study_type_name.eq(new_study_type_name))
                 .first::<DbStudyType>(conn)
         }
     }

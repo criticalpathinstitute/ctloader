@@ -50,6 +50,17 @@ table! {
 }
 
 table! {
+    study_doc (study_doc_id) {
+        study_doc_id -> Int4,
+        study_id -> Int4,
+        doc_id -> Nullable<Varchar>,
+        doc_type -> Nullable<Varchar>,
+        doc_url -> Nullable<Text>,
+        doc_comment -> Nullable<Text>,
+    }
+}
+
+table! {
     study_to_condition (study_to_condition_id) {
         study_to_condition_id -> Int4,
         study_id -> Int4,
@@ -66,6 +77,7 @@ table! {
 
 joinable!(study -> phase (phase_id));
 joinable!(study -> study_type (study_type_id));
+joinable!(study_doc -> study (study_id));
 joinable!(study_to_condition -> condition (condition_id));
 joinable!(study_to_condition -> study (study_id));
 
@@ -74,6 +86,7 @@ allow_tables_to_appear_in_same_query!(
     phase,
     status,
     study,
+    study_doc,
     study_to_condition,
     study_type,
 );

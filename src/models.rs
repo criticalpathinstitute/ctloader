@@ -116,3 +116,25 @@ pub struct DbStudyToConditionInsert {
     pub study_id: i32,
     pub condition_id: i32,
 }
+
+#[derive(Queryable, Debug, Identifiable)]
+#[primary_key(study_doc_id)]
+#[table_name = "study_doc"]
+pub struct DbStudyDoc {
+    pub study_doc_id: i32,
+    pub study_id: i32,
+    pub doc_id: Option<String>,
+    pub doc_type: Option<String>,
+    pub doc_url: Option<String>,
+    pub doc_comment: Option<String>,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_doc"]
+pub struct DbStudyDocInsert {
+    pub study_id: i32,
+    pub doc_id: Option<String>,
+    pub doc_type: Option<String>,
+    pub doc_url: Option<String>,
+    pub doc_comment: Option<String>,
+}
