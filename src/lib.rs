@@ -3,6 +3,7 @@ extern crate clap;
 extern crate dotenv;
 extern crate dtparse;
 extern crate postgres;
+extern crate quick_xml;
 extern crate regex;
 extern crate serde;
 extern crate spectral;
@@ -14,10 +15,14 @@ pub mod models;
 pub mod schema;
 
 use crate::schema::condition;
+use crate::schema::intervention;
 use crate::schema::phase;
+use crate::schema::sponsor;
 use crate::schema::status;
 use crate::schema::study_doc;
 use crate::schema::study_to_condition;
+use crate::schema::study_to_intervention;
+use crate::schema::study_to_sponsor;
 use crate::schema::study_type;
 use chrono::{NaiveDate, NaiveDateTime, Utc};
 use clap::{App, Arg};
@@ -25,7 +30,6 @@ use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use dotenv::dotenv;
 use models::*;
-use quick_xml::de::from_reader;
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -36,6 +40,7 @@ use std::fs::{self, File};
 use std::io::BufReader;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
+use walkdir::WalkDir;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 type DbResult<T> = Result<T, diesel::result::Error>;
@@ -110,7 +115,7 @@ pub struct ClinicalStudy {
     id_info: IdInfo,
     brief_title: String,
     official_title: Option<String>,
-    sponsors: Sponsors,
+    sponsors: Option<Sponsors>,
     oversight_info: Option<OversightInfo>,
     expanded_access_info: Option<ExpandedAccessInfo>,
     start_date: Option<String>,
@@ -217,12 +222,12 @@ struct CountList {
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct DropWithdrawReason {
-    drop_withdraw_reason: Milestone,
+    drop_withdraw_reason: Vec<Milestone>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Eligibility {
-    study_pop: Option<String>,
+    study_pop: Option<Textblock>,
     sampling_method: Option<String>,
     criteria: Option<Textblock>,
     gender: String,
@@ -258,7 +263,7 @@ struct Event {
     sub_title: Option<String>,
     assessment: Option<String>,
     description: Option<String>,
-    counts: Option<EventCounts>,
+    counts: Option<Vec<EventCounts>>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -343,7 +348,7 @@ struct Location {
     status: Option<String>,
     contact: Option<Contact>,
     contact_backup: Option<Contact>,
-    investigator: Option<Investigator>,
+    investigator: Option<Vec<Investigator>>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -472,7 +477,7 @@ struct ProvidedDocument {
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct ProvidedDocuments {
-    provided_document: Vec<String>,
+    provided_document: Vec<ProvidedDocument>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -592,9 +597,7 @@ pub fn get_args() -> MyResult<Config> {
         .about("Load Clinical Trials XML")
         .arg(
             Arg::with_name("file")
-                .short("f")
-                .long("file")
-                .value_name("FILE")
+                .value_name("FILES or DIRS")
                 .help("File input")
                 .required(true)
                 .min_values(1),
@@ -617,16 +620,31 @@ pub fn get_args() -> MyResult<Config> {
 // --------------------------------------------------
 pub fn run(config: Config) -> MyResult<()> {
     let conn = connection()?;
+    let files = find_files(&config.files)?;
+    let num_files = files.len();
 
-    for (fnum, filename) in config.files.into_iter().enumerate() {
+    println!(
+        "Processings {} file{}...",
+        num_files,
+        if num_files == 1 { "" } else { "s" }
+    );
+
+    for (fnum, filename) in files.into_iter().enumerate() {
         let result = match process_file(&conn, &filename, &config.force) {
             Ok(db_study) => {
                 format!("{} ({})", db_study.nct_id, db_study.study_id)
             }
-            Err(err) => err.to_string(),
+            Err(err) => {
+                let err = err.to_string();
+                eprintln!("{}: {}", filename, err);
+                err
+            }
         };
 
-        println!("{:5}: {} => {}", fnum + 1, &filename, &result);
+        let path = Path::new(&filename);
+        let basename = path.file_name().expect("basename");
+        let basename = &basename.to_string_lossy().to_string();
+        println!("{:6}: {} => {}", fnum + 1, &basename, &result);
     }
 
     Ok(())
@@ -652,6 +670,8 @@ fn process_file(
         return Err(From::from(format!("'{}' not a valid file", filename)));
     }
 
+    // Skip updating the db if the file modtime is older than db updated.
+    // The --force flag skips this check and will always update the db.
     if !force {
         if let (Ok(last_mod), Some(last_up)) =
             (file_last_modified(&path), study_last_updated(&conn, &path))
@@ -699,34 +719,6 @@ fn process_file(
         &clinical_study.id_info.nct_id,
     ) {
         update_study(&conn, &db_study, &clinical_study)?;
-
-        // Conditions
-        delete_study_conditions(&conn, &db_study)?;
-        if let Some(new_conditions) = &clinical_study.condition {
-            for new_condition in new_conditions {
-                let db_condition =
-                    find_or_create_condition(&conn, &new_condition)?;
-
-                find_or_create_study_to_condition(
-                    &conn,
-                    &db_study,
-                    &db_condition,
-                )?;
-            }
-        }
-
-        // StudyDocs
-        delete_study_docs(&conn, &db_study)?;
-        if let Some(new_study_docs) = &clinical_study.study_docs {
-            for new_study_doc in new_study_docs.study_doc.iter() {
-                match find_or_create_study_doc(&conn, &db_study, &new_study_doc)
-                {
-                    Ok(doc) => println!("Created doc"),
-                    Err(e) => println!("Err {:?}", new_study_doc),
-                }
-            }
-        }
-
         Ok(db_study)
     } else {
         Err(From::from(format!(
@@ -757,7 +749,7 @@ fn parse_xml(path: &Path) -> MyResult<ClinicalStudy> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
 
-    match from_reader(&mut reader) {
+    match quick_xml::de::from_reader(&mut reader) {
         Ok(study) => Ok(study),
         Err(err) => Err(From::from(format!("Failed to parse: {:?}", err))),
     }
@@ -790,71 +782,97 @@ pub fn find_or_create_condition<'a>(
 }
 
 // --------------------------------------------------
+pub fn find_or_create_intervention<'a>(
+    conn: &PgConnection,
+    new_intervention_name: &'a str,
+) -> DbResult<DbIntervention> {
+    let results = intervention::table
+        .filter(intervention::intervention_name.eq(new_intervention_name))
+        .first::<DbIntervention>(conn);
+
+    match results {
+        Ok(c) => Ok(c),
+        _ => {
+            diesel::insert_into(intervention::table)
+                .values(DbInterventionInsert {
+                    intervention_name: new_intervention_name.to_string(),
+                })
+                .execute(conn)
+                .expect("Error inserting intervention");
+
+            intervention::table
+                .filter(
+                    intervention::intervention_name.eq(new_intervention_name),
+                )
+                .first::<DbIntervention>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
+pub fn find_or_create_sponsor<'a>(
+    conn: &PgConnection,
+    new_sponsor_name: &'a str,
+) -> DbResult<DbSponsor> {
+    let results = sponsor::table
+        .filter(sponsor::sponsor_name.eq(new_sponsor_name))
+        .first::<DbSponsor>(conn);
+
+    match results {
+        Ok(c) => Ok(c),
+        _ => {
+            diesel::insert_into(sponsor::table)
+                .values(DbSponsorInsert {
+                    sponsor_name: new_sponsor_name.to_string(),
+                })
+                .execute(conn)
+                .expect("Error inserting sponsor");
+
+            sponsor::table
+                .filter(sponsor::sponsor_name.eq(new_sponsor_name))
+                .first::<DbSponsor>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
 pub fn find_or_create_study_doc(
     conn: &PgConnection,
     new_study: &DbStudy,
     new_doc: &StudyDoc,
 ) -> DbResult<DbStudyDoc> {
-    let results = study_doc::table
-        .filter(study_doc::study_id.eq(&new_study.study_id))
-        .filter(study_doc::doc_id.eq(&new_doc.doc_id))
-        .filter(study_doc::doc_type.eq(&new_doc.doc_type))
-        .filter(study_doc::doc_url.eq(&new_doc.doc_url))
-        .filter(study_doc::doc_comment.eq(&new_doc.doc_comment))
-        .first::<DbStudyDoc>(conn);
-
-    fn opt_text(val: Option<&String>) -> Option<String> {
-        Some(val.unwrap_or(&"".to_string()).to_string())
+    fn opt_text(val: &Option<String>) -> Option<String> {
+        Some(val.as_ref().unwrap_or(&"".to_string()).to_string())
     }
 
-    match results {
+    let new_doc_id = opt_text(&new_doc.doc_id);
+    let new_doc_type = opt_text(&new_doc.doc_type);
+    let new_doc_url = opt_text(&new_doc.doc_url);
+    let new_doc_comment = opt_text(&new_doc.doc_comment);
+    let query = study_doc::table
+        .filter(study_doc::study_id.eq(&new_study.study_id))
+        .filter(study_doc::doc_id.eq(&new_doc_id))
+        .filter(study_doc::doc_type.eq(&new_doc_type))
+        .filter(study_doc::doc_url.eq(&new_doc_url))
+        .filter(study_doc::doc_comment.eq(&new_doc_comment));
+
+    match query.first::<DbStudyDoc>(conn) {
         Ok(c) => Ok(c),
         _ => {
             diesel::insert_into(study_doc::table)
                 .values(DbStudyDocInsert {
                     study_id: new_study.study_id,
-                    doc_id: opt_text(new_doc.doc_id.as_ref()),
-                    doc_type: opt_text(new_doc.doc_type.as_ref()),
-                    doc_url: opt_text(new_doc.doc_url.as_ref()),
-                    doc_comment: opt_text(new_doc.doc_comment.as_ref()),
+                    doc_id: new_doc_id.clone(),
+                    doc_type: new_doc_type.clone(),
+                    doc_url: new_doc_url.clone(),
+                    doc_comment: new_doc_comment.clone(),
                 })
                 .execute(conn)
                 .expect("Error inserting study_doc");
 
-            study_doc::table
-                .filter(study_doc::study_id.eq(&new_study.study_id))
-                .filter(study_doc::doc_id.eq(&new_doc.doc_id))
-                .filter(study_doc::doc_type.eq(&new_doc.doc_type))
-                .filter(study_doc::doc_url.eq(&new_doc.doc_url))
-                .filter(study_doc::doc_comment.eq(&new_doc.doc_comment))
-                .first::<DbStudyDoc>(conn)
+            query.first::<DbStudyDoc>(conn)
         }
     }
-
-    //let find = study_doc::table
-    //    .filter(study_doc::study_id.eq(&new_study.study_id))
-    //    .filter(study_doc::doc_id.eq(new_doc.doc_id.as_ref()))
-    //    .filter(study_doc::doc_type.eq(new_doc.doc_type.as_ref()))
-    //    .filter(study_doc::doc_url.eq(new_doc.doc_url.as_ref()))
-    //    .filter(study_doc::doc_comment.eq(new_doc.doc_comment.as_ref()));
-
-    //let results = find.first::<DbStudyDoc>(conn);
-    //match results {
-    //    Ok(c) => Ok(c),
-    //    _ => {
-    //        diesel::insert_into(study_doc::table)
-    //            .values(DbStudyDocInsert {
-    //                study_id: new_study.study_id,
-    //                doc_id: new_doc.doc_id.as_ref(),
-    //                doc_type: new_doc.doc_type.as_ref(),
-    //                doc_url: new_doc.doc_url.as_ref(),
-    //                doc_comment: new_doc.doc_comment.as_ref(),
-    //            })
-    //            .execute(conn)
-    //            .expect("Error inserting study_doc");
-    //        find.first::<DbStudyDoc>(conn)
-    //    }
-    //}
 }
 
 // --------------------------------------------------
@@ -885,6 +903,50 @@ pub fn delete_study_docs(
 }
 
 // --------------------------------------------------
+fn find_files(paths: &Vec<String>) -> MyResult<Vec<String>> {
+    let mut files: Vec<String> = vec![];
+    for path in paths {
+        let walker = WalkDir::new(path).into_iter();
+        for entry in walker.filter_map(|e| e.ok()) {
+            if entry
+                .file_name()
+                .to_str()
+                .map_or(false, |s| s.ends_with(".xml"))
+            {
+                files.push(entry.path().display().to_string());
+            }
+        }
+    }
+
+    Ok(files)
+}
+
+// --------------------------------------------------
+//fn find_files(paths: &[String]) -> MyResult<Vec<String>> {
+//    let mut files = vec![];
+//    for path in paths {
+//        let meta = fs::metadata(path)?;
+//        if meta.is_file() {
+//            files.push(path.to_owned());
+//        } else {
+//            for entry in fs::read_dir(path)? {
+//                let entry = entry?;
+//                let meta = entry.metadata()?;
+//                if meta.is_file() {
+//                    files.push(entry.path().display().to_string());
+//                }
+//            }
+//        };
+//    }
+
+//    if files.is_empty() {
+//        return Err(From::from("No input files"));
+//    }
+
+//    Ok(files)
+//}
+
+// --------------------------------------------------
 pub fn find_or_create_study_to_condition(
     conn: &PgConnection,
     new_study: &DbStudy,
@@ -913,6 +975,72 @@ pub fn find_or_create_study_to_condition(
                         .eq(new_condition.condition_id),
                 )
                 .first::<DbStudyToCondition>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
+pub fn find_or_create_study_to_intervention(
+    conn: &PgConnection,
+    new_study: &DbStudy,
+    new_intervention: &DbIntervention,
+) -> DbResult<DbStudyToIntervention> {
+    let results = study_to_intervention::table
+        .filter(study_to_intervention::study_id.eq(new_study.study_id))
+        .filter(
+            study_to_intervention::intervention_id
+                .eq(new_intervention.intervention_id),
+        )
+        .first::<DbStudyToIntervention>(conn);
+
+    match results {
+        Ok(c2s) => Ok(c2s),
+        _ => {
+            diesel::insert_into(study_to_intervention::table)
+                .values(DbStudyToInterventionInsert {
+                    study_id: new_study.study_id,
+                    intervention_id: new_intervention.intervention_id,
+                })
+                .execute(conn)
+                .expect("Error inserting intervention_to_study");
+
+            study_to_intervention::table
+                .filter(study_to_intervention::study_id.eq(new_study.study_id))
+                .filter(
+                    study_to_intervention::intervention_id
+                        .eq(new_intervention.intervention_id),
+                )
+                .first::<DbStudyToIntervention>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
+pub fn find_or_create_study_to_sponsor(
+    conn: &PgConnection,
+    new_study: &DbStudy,
+    new_sponsor: &DbSponsor,
+) -> DbResult<DbStudyToSponsor> {
+    let results = study_to_sponsor::table
+        .filter(study_to_sponsor::study_id.eq(new_study.study_id))
+        .filter(study_to_sponsor::sponsor_id.eq(new_sponsor.sponsor_id))
+        .first::<DbStudyToSponsor>(conn);
+
+    match results {
+        Ok(c2s) => Ok(c2s),
+        _ => {
+            diesel::insert_into(study_to_sponsor::table)
+                .values(DbStudyToSponsorInsert {
+                    study_id: new_study.study_id,
+                    sponsor_id: new_sponsor.sponsor_id,
+                })
+                .execute(conn)
+                .expect("Error inserting sponsor_to_study");
+
+            study_to_sponsor::table
+                .filter(study_to_sponsor::study_id.eq(new_study.study_id))
+                .filter(study_to_sponsor::sponsor_id.eq(new_sponsor.sponsor_id))
+                .first::<DbStudyToSponsor>(conn)
         }
     }
 }
@@ -1100,6 +1228,56 @@ pub fn update_study<'a>(
         .execute(conn)
         .expect("Error updating study");
 
+    // Conditions
+    //delete_study_conditions(&conn, &db_study)?;
+    if let Some(new_conditions) = &new_study.condition {
+        for new_condition in new_conditions {
+            let db_condition = find_or_create_condition(&conn, &new_condition)?;
+
+            find_or_create_study_to_condition(&conn, &db_study, &db_condition)?;
+        }
+    }
+
+    // Interventions
+    if let Some(new_interventions) = &new_study.intervention {
+        for new_intervention in new_interventions {
+            let db_intervention = find_or_create_intervention(
+                &conn,
+                &new_intervention.intervention_name,
+            )?;
+
+            find_or_create_study_to_intervention(
+                &conn,
+                &db_study,
+                &db_intervention,
+            )?;
+        }
+    }
+
+    // Sponsors
+    if let Some(new_sponsors) = &new_study.sponsors {
+        let lead_sponsor =
+            find_or_create_sponsor(&conn, &new_sponsors.lead_sponsor.agency)?;
+        find_or_create_study_to_sponsor(&conn, &db_study, &lead_sponsor)?;
+
+        if let Some(collaborators) = &new_sponsors.collaborator {
+            for new_sponsor in collaborators {
+                let db_sponsor =
+                    find_or_create_sponsor(&conn, &new_sponsor.agency)?;
+
+                find_or_create_study_to_sponsor(&conn, &db_study, &db_sponsor)?;
+            }
+        }
+    }
+
+    // StudyDocs
+    //delete_study_docs(&conn, &db_study)?;
+    if let Some(new_study_docs) = &new_study.study_docs {
+        for new_study_doc in new_study_docs.study_doc.iter() {
+            find_or_create_study_doc(&conn, &db_study, &new_study_doc)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -1120,11 +1298,38 @@ fn get_all_text(study: &ClinicalStudy) -> Option<String> {
         }
     }
 
+    let interventions = match &study.intervention {
+        Some(vals) => vals
+            .into_iter()
+            .map(|x| x.intervention_name.to_string())
+            .collect::<Vec<String>>()
+            .join(" "),
+        _ => "".to_string(),
+    };
+
+    let (lead_sponsor, collaborators) = match &study.sponsors {
+        Some(val) => {
+            let collabs = match &val.collaborator {
+                Some(c) => c
+                    .into_iter()
+                    .map(|x| x.agency.to_string())
+                    .collect::<Vec<String>>()
+                    .join(" "),
+                _ => "".to_string(),
+            };
+            (val.lead_sponsor.agency.to_string(), collabs)
+        }
+        _ => ("".to_string(), "".to_string()),
+    };
+
     let all_fields = vec![
         study.id_info.nct_id.to_string(),
         study.brief_title.to_string(),
         opt_text(study.official_title.as_ref()),
         study.source.to_string(),
+        interventions,
+        lead_sponsor,
+        collaborators,
         vec_text(study.condition.as_ref()),
         vec_text(study.keyword.as_ref()),
         opt_text(study.official_title.as_ref()),

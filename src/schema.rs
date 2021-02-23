@@ -6,9 +6,23 @@ table! {
 }
 
 table! {
+    intervention (intervention_id) {
+        intervention_id -> Int4,
+        intervention_name -> Varchar,
+    }
+}
+
+table! {
     phase (phase_id) {
         phase_id -> Int4,
         phase_name -> Varchar,
+    }
+}
+
+table! {
+    sponsor (sponsor_id) {
+        sponsor_id -> Int4,
+        sponsor_name -> Varchar,
     }
 }
 
@@ -69,6 +83,22 @@ table! {
 }
 
 table! {
+    study_to_intervention (study_to_intervention_id) {
+        study_to_intervention_id -> Int4,
+        study_id -> Int4,
+        intervention_id -> Int4,
+    }
+}
+
+table! {
+    study_to_sponsor (study_to_sponsor_id) {
+        study_to_sponsor_id -> Int4,
+        study_id -> Int4,
+        sponsor_id -> Int4,
+    }
+}
+
+table! {
     study_type (study_type_id) {
         study_type_id -> Int4,
         study_type_name -> Varchar,
@@ -80,13 +110,21 @@ joinable!(study -> study_type (study_type_id));
 joinable!(study_doc -> study (study_id));
 joinable!(study_to_condition -> condition (condition_id));
 joinable!(study_to_condition -> study (study_id));
+joinable!(study_to_intervention -> intervention (intervention_id));
+joinable!(study_to_intervention -> study (study_id));
+joinable!(study_to_sponsor -> sponsor (sponsor_id));
+joinable!(study_to_sponsor -> study (study_id));
 
 allow_tables_to_appear_in_same_query!(
     condition,
+    intervention,
     phase,
+    sponsor,
     status,
     study,
     study_doc,
     study_to_condition,
+    study_to_intervention,
+    study_to_sponsor,
     study_type,
 );

@@ -17,3 +17,4 @@ quick-xml = { version = "0.21.0", features = [ "serialize" ] }
 regex = "~1.4"
 serde = { version = "1.0", features = [ "derive" ] }
 spectral = "0.6.0"
+walkdir = "2"

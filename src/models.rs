@@ -19,6 +19,20 @@ pub struct DbConditionInsert {
 }
 
 #[derive(Queryable, Debug, Identifiable)]
+#[primary_key(intervention_id)]
+#[table_name = "intervention"]
+pub struct DbIntervention {
+    pub intervention_id: i32,
+    pub intervention_name: String,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "intervention"]
+pub struct DbInterventionInsert {
+    pub intervention_name: String,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
 #[table_name = "phase"]
 #[primary_key(phase_id)]
 pub struct DbPhase {
@@ -30,6 +44,20 @@ pub struct DbPhase {
 #[table_name = "phase"]
 pub struct DbPhaseInsert<'a> {
     pub phase_name: &'a str,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
+#[primary_key(sponsor_id)]
+#[table_name = "sponsor"]
+pub struct DbSponsor {
+    pub sponsor_id: i32,
+    pub sponsor_name: String,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "sponsor"]
+pub struct DbSponsorInsert {
+    pub sponsor_name: String,
 }
 
 #[derive(Queryable, Debug, Identifiable)]
@@ -137,4 +165,36 @@ pub struct DbStudyDocInsert {
     pub doc_type: Option<String>,
     pub doc_url: Option<String>,
     pub doc_comment: Option<String>,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
+#[primary_key(study_to_intervention_id)]
+#[table_name = "study_to_intervention"]
+pub struct DbStudyToIntervention {
+    pub study_to_intervention_id: i32,
+    pub study_id: i32,
+    pub intervention_id: i32,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_to_intervention"]
+pub struct DbStudyToInterventionInsert {
+    pub study_id: i32,
+    pub intervention_id: i32,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
+#[primary_key(study_to_sponsor_id)]
+#[table_name = "study_to_sponsor"]
+pub struct DbStudyToSponsor {
+    pub study_to_sponsor_id: i32,
+    pub study_id: i32,
+    pub sponsor_id: i32,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_to_sponsor"]
+pub struct DbStudyToSponsorInsert {
+    pub study_id: i32,
+    pub sponsor_id: i32,
 }
