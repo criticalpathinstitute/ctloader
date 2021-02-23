@@ -710,21 +710,24 @@ fn process_file(
     let db_last_known_status =
         find_or_create_status(&conn, &new_last_known_status)?;
 
-    if let Ok(db_study) = find_or_create_study(
+    let result = find_or_create_study(
         &conn,
         &db_phase,
         &db_study_type,
         &db_overall_status,
         &db_last_known_status,
         &clinical_study.id_info.nct_id,
-    ) {
-        update_study(&conn, &db_study, &clinical_study)?;
-        Ok(db_study)
-    } else {
-        Err(From::from(format!(
-            "Failed to create {}",
-            clinical_study.id_info.nct_id
-        )))
+    );
+
+    match result {
+        Ok(db_study) => {
+            update_study(&conn, &db_study, &clinical_study)?;
+            Ok(db_study)
+        }
+        Err(e) => Err(From::from(format!(
+            "Failed to create {}: {:?}",
+            clinical_study.id_info.nct_id, e
+        ))),
     }
 }
 
