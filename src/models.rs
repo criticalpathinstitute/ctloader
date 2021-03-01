@@ -116,6 +116,28 @@ pub struct DbStudyInsert<'a> {
 }
 
 #[derive(Queryable, Debug, Identifiable)]
+#[table_name = "study_outcome"]
+#[primary_key(study_outcome_id)]
+pub struct DbStudyOutcome {
+    pub study_outcome_id: i32,
+    pub study_id: i32,
+    pub outcome_type: String,
+    pub measure: String,
+    pub time_frame: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_outcome"]
+pub struct DbStudyOutcomeInsert {
+    pub study_id: i32,
+    pub outcome_type: String,
+    pub measure: String,
+    pub time_frame: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
 #[table_name = "study_type"]
 #[primary_key(study_type_id)]
 pub struct DbStudyType {

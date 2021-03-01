@@ -75,6 +75,17 @@ table! {
 }
 
 table! {
+    study_outcome (study_outcome_id) {
+        study_outcome_id -> Int4,
+        study_id -> Int4,
+        outcome_type -> Varchar,
+        measure -> Text,
+        time_frame -> Nullable<Text>,
+        description -> Nullable<Text>,
+    }
+}
+
+table! {
     study_to_condition (study_to_condition_id) {
         study_to_condition_id -> Int4,
         study_id -> Int4,
@@ -108,6 +119,7 @@ table! {
 joinable!(study -> phase (phase_id));
 joinable!(study -> study_type (study_type_id));
 joinable!(study_doc -> study (study_id));
+joinable!(study_outcome -> study (study_id));
 joinable!(study_to_condition -> condition (condition_id));
 joinable!(study_to_condition -> study (study_id));
 joinable!(study_to_intervention -> intervention (intervention_id));
@@ -123,6 +135,7 @@ allow_tables_to_appear_in_same_query!(
     status,
     study,
     study_doc,
+    study_outcome,
     study_to_condition,
     study_to_intervention,
     study_to_sponsor,

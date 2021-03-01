@@ -20,11 +20,13 @@ use crate::schema::phase;
 use crate::schema::sponsor;
 use crate::schema::status;
 use crate::schema::study_doc;
+use crate::schema::study_outcome;
 use crate::schema::study_to_condition;
 use crate::schema::study_to_intervention;
 use crate::schema::study_to_sponsor;
 use crate::schema::study_type;
-use chrono::{NaiveDate, NaiveDateTime, Utc};
+//use chrono::{NaiveDate, NaiveDateTime, Utc};
+use chrono::{NaiveDate, Utc};
 use clap::{App, Arg};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
@@ -33,13 +35,14 @@ use models::*;
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashSet;
-use std::convert::TryInto;
+//use std::convert::TryInto;
 use std::env;
 use std::error::Error;
-use std::fs::{self, File};
+//use std::fs::{self, File};
+use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use std::time::UNIX_EPOCH;
+//use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -437,7 +440,7 @@ struct PointOfContact {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-struct ProtocolOutcome {
+pub struct ProtocolOutcome {
     measure: String,
     time_frame: Option<String>,
     description: Option<String>,
@@ -651,13 +654,13 @@ pub fn run(config: Config) -> MyResult<()> {
 }
 
 // --------------------------------------------------
-fn file_last_modified(path: &Path) -> MyResult<NaiveDateTime> {
-    let time = fs::metadata(path)?.modified()?.duration_since(UNIX_EPOCH)?;
-    Ok(NaiveDateTime::from_timestamp(
-        time.as_secs().try_into().unwrap(),
-        0,
-    ))
-}
+//fn file_last_modified(path: &Path) -> MyResult<NaiveDateTime> {
+//    let time = fs::metadata(path)?.modified()?.duration_since(UNIX_EPOCH)?;
+//    Ok(NaiveDateTime::from_timestamp(
+//        time.as_secs().try_into().unwrap(),
+//        0,
+//    ))
+//}
 
 // --------------------------------------------------
 fn process_file(
@@ -672,17 +675,29 @@ fn process_file(
 
     // Skip updating the db if the file modtime is older than db updated.
     // The --force flag skips this check and will always update the db.
+    //if !force {
+    //    if let (Ok(last_mod), Some(last_up)) =
+    //        (file_last_modified(&path), study_last_updated(&conn, &path))
+    //    {
+    //        if last_mod < last_up {
+    //            return Err(From::from("File older than data, skipping."));
+    //        }
+    //    }
+    //}
+
+    let clinical_study = parse_xml(&path)?;
+
     if !force {
-        if let (Ok(last_mod), Some(last_up)) =
-            (file_last_modified(&path), study_last_updated(&conn, &path))
-        {
-            if last_mod < last_up {
-                return Err(From::from("File older than data, skipping."));
+        if let (Some(last_update_posted), Some(last_up)) = (
+            extract_date(&clinical_study.last_update_posted.as_ref()),
+            study_last_updated(&conn, &path),
+        ) {
+            if last_update_posted < last_up {
+                return Err(From::from("Study older than data, skipping."));
             }
         }
     }
 
-    let clinical_study = parse_xml(&path)?;
     let new_phase_name = &clinical_study
         .phase
         .clone()
@@ -1104,7 +1119,7 @@ pub fn find_or_create_status<'a>(
 fn study_last_updated<'a>(
     conn: &PgConnection,
     path: &Path,
-) -> Option<NaiveDateTime> {
+) -> Option<NaiveDate> {
     use crate::schema::study::dsl::*;
 
     match path.file_stem() {
@@ -1112,7 +1127,9 @@ fn study_last_updated<'a>(
             let study_nct_id = &stem.to_string_lossy().to_string();
 
             match study.filter(nct_id.eq(study_nct_id)).first::<DbStudy>(conn) {
-                Ok(db_study) => db_study.record_last_updated,
+                Ok(db_study) => {
+                    db_study.record_last_updated.and_then(|d| Some(d.date()))
+                }
                 _ => None,
             }
         }
@@ -1190,6 +1207,47 @@ pub fn find_or_create_study_type<'a>(
 }
 
 // --------------------------------------------------
+pub fn find_or_create_study_outcome<'a>(
+    conn: &PgConnection,
+    new_study: &DbStudy,
+    new_outcome: &ProtocolOutcome,
+    outcome_type: String,
+) -> DbResult<DbStudyOutcome> {
+    fn opt_text(val: &Option<String>) -> Option<String> {
+        Some(val.as_ref().unwrap_or(&"".to_string()).to_string())
+    }
+
+    let new_measure = &new_outcome.measure;
+    let new_time_frame = opt_text(&new_outcome.time_frame);
+    let new_desc = opt_text(&new_outcome.description);
+
+    let query = study_outcome::table
+        .filter(study_outcome::study_id.eq(&new_study.study_id))
+        .filter(study_outcome::outcome_type.eq(&outcome_type))
+        .filter(study_outcome::measure.eq(&new_measure))
+        .filter(study_outcome::time_frame.eq(&new_time_frame))
+        .filter(study_outcome::description.eq(&new_desc));
+
+    match query.first::<DbStudyOutcome>(conn) {
+        Ok(s) => Ok(s),
+        _ => {
+            diesel::insert_into(study_outcome::table)
+                .values(DbStudyOutcomeInsert {
+                    study_id: new_study.study_id,
+                    outcome_type: outcome_type.clone(),
+                    measure: new_measure.clone(),
+                    time_frame: new_time_frame.clone(),
+                    description: new_desc.clone(),
+                })
+                .execute(conn)
+                .expect("Error inserting study_outcome");
+
+            query.first::<DbStudyOutcome>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
 pub fn update_study<'a>(
     conn: &PgConnection,
     db_study: &'a DbStudy,
@@ -1231,53 +1289,87 @@ pub fn update_study<'a>(
         .execute(conn)
         .expect("Error updating study");
 
-    // Conditions
-    //delete_study_conditions(&conn, &db_study)?;
-    if let Some(new_conditions) = &new_study.condition {
-        for new_condition in new_conditions {
-            let db_condition = find_or_create_condition(&conn, &new_condition)?;
+    //// Conditions
+    ////delete_study_conditions(&conn, &db_study)?;
+    //if let Some(new_conditions) = &new_study.condition {
+    //    for new_condition in new_conditions {
+    //        let db_condition = find_or_create_condition(&conn, &new_condition)?;
 
-            find_or_create_study_to_condition(&conn, &db_study, &db_condition)?;
-        }
-    }
+    //        find_or_create_study_to_condition(&conn, &db_study, &db_condition)?;
+    //    }
+    //}
 
-    // Interventions
-    if let Some(new_interventions) = &new_study.intervention {
-        for new_intervention in new_interventions {
-            let db_intervention = find_or_create_intervention(
-                &conn,
-                &new_intervention.intervention_name,
-            )?;
+    //// Interventions
+    //if let Some(new_interventions) = &new_study.intervention {
+    //    for new_intervention in new_interventions {
+    //        let db_intervention = find_or_create_intervention(
+    //            &conn,
+    //            &new_intervention.intervention_name,
+    //        )?;
 
-            find_or_create_study_to_intervention(
+    //        find_or_create_study_to_intervention(
+    //            &conn,
+    //            &db_study,
+    //            &db_intervention,
+    //        )?;
+    //    }
+    //}
+
+    //// Sponsors
+    //if let Some(new_sponsors) = &new_study.sponsors {
+    //    let lead_sponsor =
+    //        find_or_create_sponsor(&conn, &new_sponsors.lead_sponsor.agency)?;
+    //    find_or_create_study_to_sponsor(&conn, &db_study, &lead_sponsor)?;
+
+    //    if let Some(collaborators) = &new_sponsors.collaborator {
+    //        for new_sponsor in collaborators {
+    //            let db_sponsor =
+    //                find_or_create_sponsor(&conn, &new_sponsor.agency)?;
+
+    //            find_or_create_study_to_sponsor(&conn, &db_study, &db_sponsor)?;
+    //        }
+    //    }
+    //}
+
+    //// StudyDocs
+    ////delete_study_docs(&conn, &db_study)?;
+    //if let Some(new_study_docs) = &new_study.study_docs {
+    //    for new_study_doc in new_study_docs.study_doc.iter() {
+    //        find_or_create_study_doc(&conn, &db_study, &new_study_doc)?;
+    //    }
+    //}
+
+    // Outcomes
+    if let Some(new_primary_outcomes) = &new_study.primary_outcome {
+        for new_outcome in new_primary_outcomes.iter() {
+            find_or_create_study_outcome(
                 &conn,
                 &db_study,
-                &db_intervention,
+                &new_outcome,
+                "primary".to_string(),
             )?;
         }
     }
 
-    // Sponsors
-    if let Some(new_sponsors) = &new_study.sponsors {
-        let lead_sponsor =
-            find_or_create_sponsor(&conn, &new_sponsors.lead_sponsor.agency)?;
-        find_or_create_study_to_sponsor(&conn, &db_study, &lead_sponsor)?;
-
-        if let Some(collaborators) = &new_sponsors.collaborator {
-            for new_sponsor in collaborators {
-                let db_sponsor =
-                    find_or_create_sponsor(&conn, &new_sponsor.agency)?;
-
-                find_or_create_study_to_sponsor(&conn, &db_study, &db_sponsor)?;
-            }
+    if let Some(new_secondary_outcomes) = &new_study.secondary_outcome {
+        for new_outcome in new_secondary_outcomes.iter() {
+            find_or_create_study_outcome(
+                &conn,
+                &db_study,
+                &new_outcome,
+                "secondary".to_string(),
+            )?;
         }
     }
 
-    // StudyDocs
-    //delete_study_docs(&conn, &db_study)?;
-    if let Some(new_study_docs) = &new_study.study_docs {
-        for new_study_doc in new_study_docs.study_doc.iter() {
-            find_or_create_study_doc(&conn, &db_study, &new_study_doc)?;
+    if let Some(new_other_outcomes) = &new_study.other_outcome {
+        for new_outcome in new_other_outcomes.iter() {
+            find_or_create_study_outcome(
+                &conn,
+                &db_study,
+                &new_outcome,
+                "other".to_string(),
+            )?;
         }
     }
 
@@ -1325,6 +1417,37 @@ fn get_all_text(study: &ClinicalStudy) -> Option<String> {
         _ => ("".to_string(), "".to_string()),
     };
 
+    let mut outcomes: Vec<String> = vec![];
+    if let Some(primary_outcomes) = &study.primary_outcome {
+        for outcome in primary_outcomes {
+            let desc = match &outcome.description {
+                Some(val) => val.to_string(),
+                _ => "".to_string(),
+            };
+            outcomes.push(format!("{} {}", outcome.measure, desc));
+        }
+    }
+
+    if let Some(secondary_outcomes) = &study.secondary_outcome {
+        for outcome in secondary_outcomes {
+            let desc = match &outcome.description {
+                Some(val) => val.to_string(),
+                _ => "".to_string(),
+            };
+            outcomes.push(format!("{} {}", outcome.measure, desc));
+        }
+    }
+
+    if let Some(other_outcomes) = &study.other_outcome {
+        for outcome in other_outcomes {
+            let desc = match &outcome.description {
+                Some(val) => val.to_string(),
+                _ => "".to_string(),
+            };
+            outcomes.push(format!("{} {}", outcome.measure, desc));
+        }
+    }
+
     let all_fields = vec![
         study.id_info.nct_id.to_string(),
         study.brief_title.to_string(),
@@ -1339,6 +1462,7 @@ fn get_all_text(study: &ClinicalStudy) -> Option<String> {
         opt_text(study.acronym.as_ref()),
         tb_text(study.brief_summary.as_ref()),
         tb_text(study.detailed_description.as_ref()),
+        outcomes.join(" ").to_string(),
     ];
 
     let re1 = Regex::new(r"[^a-z0-9.]").unwrap();
