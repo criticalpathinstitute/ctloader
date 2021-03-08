@@ -52,6 +52,7 @@ type DbResult<T> = Result<T, diesel::result::Error>;
 pub struct Config {
     files: Vec<String>,
     force: bool,
+    resume: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -599,16 +600,25 @@ pub fn get_args() -> MyResult<Config> {
         .author("Ken Youens-Clark <kyclark@c-path.org>")
         .about("Load Clinical Trials XML")
         .arg(
+            Arg::with_name("resume")
+                .value_name("INT")
+                .short("r")
+                .long("resume")
+                .help("Resume after N records"),
+        )
+        .arg(
+            Arg::with_name("force")
+                .short("f")
+                .long("force")
+                .help("Always update from file")
+                .takes_value(false),
+        )
+        .arg(
             Arg::with_name("file")
                 .value_name("FILES or DIRS")
                 .help("File input")
                 .required(true)
                 .min_values(1),
-        )
-        .arg(
-            Arg::with_name("force")
-                .long("force")
-                .help("Always update from file"),
         )
         .get_matches();
 
@@ -617,6 +627,9 @@ pub fn get_args() -> MyResult<Config> {
     Ok(Config {
         files: files,
         force: matches.is_present("force"),
+        resume: matches
+            .value_of("resume")
+            .and_then(|v| v.parse::<usize>().ok()),
     })
 }
 
@@ -633,6 +646,12 @@ pub fn run(config: Config) -> MyResult<()> {
     );
 
     for (fnum, filename) in files.into_iter().enumerate() {
+        if let Some(resume) = &config.resume {
+            if fnum + 1 < resume - 1 {
+                continue;
+            }
+        }
+
         let result = match process_file(&conn, &filename, &config.force) {
             Ok(db_study) => {
                 format!("{} ({})", db_study.nct_id, db_study.study_id)
@@ -654,15 +673,6 @@ pub fn run(config: Config) -> MyResult<()> {
 }
 
 // --------------------------------------------------
-//fn file_last_modified(path: &Path) -> MyResult<NaiveDateTime> {
-//    let time = fs::metadata(path)?.modified()?.duration_since(UNIX_EPOCH)?;
-//    Ok(NaiveDateTime::from_timestamp(
-//        time.as_secs().try_into().unwrap(),
-//        0,
-//    ))
-//}
-
-// --------------------------------------------------
 fn process_file(
     conn: &PgConnection,
     filename: &str,
@@ -673,20 +683,10 @@ fn process_file(
         return Err(From::from(format!("'{}' not a valid file", filename)));
     }
 
-    // Skip updating the db if the file modtime is older than db updated.
-    // The --force flag skips this check and will always update the db.
-    //if !force {
-    //    if let (Ok(last_mod), Some(last_up)) =
-    //        (file_last_modified(&path), study_last_updated(&conn, &path))
-    //    {
-    //        if last_mod < last_up {
-    //            return Err(From::from("File older than data, skipping."));
-    //        }
-    //    }
-    //}
-
     let clinical_study = parse_xml(&path)?;
 
+    // Skip updating the db if the file modtime is older than db updated.
+    // The --force flag skips this check and will always update the db.
     if !force {
         if let (Some(last_update_posted), Some(last_up)) = (
             extract_date(&clinical_study.last_update_posted.as_ref()),
