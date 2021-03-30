@@ -25,7 +25,6 @@ use crate::schema::study_to_condition;
 use crate::schema::study_to_intervention;
 use crate::schema::study_to_sponsor;
 use crate::schema::study_type;
-//use chrono::{NaiveDate, NaiveDateTime, Utc};
 use chrono::{NaiveDate, Utc};
 use clap::{App, Arg};
 use diesel::pg::PgConnection;
@@ -35,14 +34,11 @@ use models::*;
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashSet;
-//use std::convert::TryInto;
 use std::env;
 use std::error::Error;
-//use std::fs::{self, File};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-//use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -714,7 +710,8 @@ fn process_file(
         .unwrap_or("Unknown status".to_string())
         .to_string();
 
-    let db_overall_status = find_or_create_status(&conn, &new_overall_status)?;
+    let db_overall_status =
+        find_or_create_status(&conn, &new_overall_status)?;
 
     let new_last_known_status = &clinical_study
         .last_known_status
@@ -940,31 +937,6 @@ fn find_files(paths: &Vec<String>) -> MyResult<Vec<String>> {
 }
 
 // --------------------------------------------------
-//fn find_files(paths: &[String]) -> MyResult<Vec<String>> {
-//    let mut files = vec![];
-//    for path in paths {
-//        let meta = fs::metadata(path)?;
-//        if meta.is_file() {
-//            files.push(path.to_owned());
-//        } else {
-//            for entry in fs::read_dir(path)? {
-//                let entry = entry?;
-//                let meta = entry.metadata()?;
-//                if meta.is_file() {
-//                    files.push(entry.path().display().to_string());
-//                }
-//            }
-//        };
-//    }
-
-//    if files.is_empty() {
-//        return Err(From::from("No input files"));
-//    }
-
-//    Ok(files)
-//}
-
-// --------------------------------------------------
 pub fn find_or_create_study_to_condition(
     conn: &PgConnection,
     new_study: &DbStudy,
@@ -972,7 +944,9 @@ pub fn find_or_create_study_to_condition(
 ) -> DbResult<DbStudyToCondition> {
     let results = study_to_condition::table
         .filter(study_to_condition::study_id.eq(new_study.study_id))
-        .filter(study_to_condition::condition_id.eq(new_condition.condition_id))
+        .filter(
+            study_to_condition::condition_id.eq(new_condition.condition_id),
+        )
         .first::<DbStudyToCondition>(conn);
 
     match results {
@@ -1023,7 +997,9 @@ pub fn find_or_create_study_to_intervention(
                 .expect("Error inserting intervention_to_study");
 
             study_to_intervention::table
-                .filter(study_to_intervention::study_id.eq(new_study.study_id))
+                .filter(
+                    study_to_intervention::study_id.eq(new_study.study_id),
+                )
                 .filter(
                     study_to_intervention::intervention_id
                         .eq(new_intervention.intervention_id),
@@ -1057,7 +1033,9 @@ pub fn find_or_create_study_to_sponsor(
 
             study_to_sponsor::table
                 .filter(study_to_sponsor::study_id.eq(new_study.study_id))
-                .filter(study_to_sponsor::sponsor_id.eq(new_sponsor.sponsor_id))
+                .filter(
+                    study_to_sponsor::sponsor_id.eq(new_sponsor.sponsor_id),
+                )
                 .first::<DbStudyToSponsor>(conn)
         }
     }
@@ -1126,7 +1104,8 @@ fn study_last_updated<'a>(
         Some(stem) => {
             let study_nct_id = &stem.to_string_lossy().to_string();
 
-            match study.filter(nct_id.eq(study_nct_id)).first::<DbStudy>(conn) {
+            match study.filter(nct_id.eq(study_nct_id)).first::<DbStudy>(conn)
+            {
                 Ok(db_study) => {
                     db_study.record_last_updated.and_then(|d| Some(d.date()))
                 }
@@ -1290,56 +1269,65 @@ pub fn update_study<'a>(
         .expect("Error updating study");
 
     //// Conditions
-    ////delete_study_conditions(&conn, &db_study)?;
-    //if let Some(new_conditions) = &new_study.condition {
-    //    for new_condition in new_conditions {
-    //        let db_condition = find_or_create_condition(&conn, &new_condition)?;
+    //delete_study_conditions(&conn, &db_study)?;
+    if let Some(new_conditions) = &new_study.condition {
+        for new_condition in new_conditions {
+            let db_condition =
+                find_or_create_condition(&conn, &new_condition)?;
 
-    //        find_or_create_study_to_condition(&conn, &db_study, &db_condition)?;
-    //    }
-    //}
+            find_or_create_study_to_condition(
+                &conn,
+                &db_study,
+                &db_condition,
+            )?;
+        }
+    }
 
-    //// Interventions
-    //if let Some(new_interventions) = &new_study.intervention {
-    //    for new_intervention in new_interventions {
-    //        let db_intervention = find_or_create_intervention(
-    //            &conn,
-    //            &new_intervention.intervention_name,
-    //        )?;
+    // Interventions
+    if let Some(new_interventions) = &new_study.intervention {
+        for new_intervention in new_interventions {
+            let db_intervention = find_or_create_intervention(
+                &conn,
+                &new_intervention.intervention_name,
+            )?;
 
-    //        find_or_create_study_to_intervention(
-    //            &conn,
-    //            &db_study,
-    //            &db_intervention,
-    //        )?;
-    //    }
-    //}
+            find_or_create_study_to_intervention(
+                &conn,
+                &db_study,
+                &db_intervention,
+            )?;
+        }
+    }
 
-    //// Sponsors
-    //if let Some(new_sponsors) = &new_study.sponsors {
-    //    let lead_sponsor =
-    //        find_or_create_sponsor(&conn, &new_sponsors.lead_sponsor.agency)?;
-    //    find_or_create_study_to_sponsor(&conn, &db_study, &lead_sponsor)?;
+    // Sponsors
+    if let Some(new_sponsors) = &new_study.sponsors {
+        let lead_sponsor =
+            find_or_create_sponsor(&conn, &new_sponsors.lead_sponsor.agency)?;
+        find_or_create_study_to_sponsor(&conn, &db_study, &lead_sponsor)?;
 
-    //    if let Some(collaborators) = &new_sponsors.collaborator {
-    //        for new_sponsor in collaborators {
-    //            let db_sponsor =
-    //                find_or_create_sponsor(&conn, &new_sponsor.agency)?;
+        if let Some(collaborators) = &new_sponsors.collaborator {
+            for new_sponsor in collaborators {
+                let db_sponsor =
+                    find_or_create_sponsor(&conn, &new_sponsor.agency)?;
 
-    //            find_or_create_study_to_sponsor(&conn, &db_study, &db_sponsor)?;
-    //        }
-    //    }
-    //}
+                find_or_create_study_to_sponsor(
+                    &conn,
+                    &db_study,
+                    &db_sponsor,
+                )?;
+            }
+        }
+    }
 
-    //// StudyDocs
-    ////delete_study_docs(&conn, &db_study)?;
-    //if let Some(new_study_docs) = &new_study.study_docs {
-    //    for new_study_doc in new_study_docs.study_doc.iter() {
-    //        find_or_create_study_doc(&conn, &db_study, &new_study_doc)?;
-    //    }
-    //}
+    // StudyDocs
+    //delete_study_docs(&conn, &db_study)?;
+    if let Some(new_study_docs) = &new_study.study_docs {
+        for new_study_doc in new_study_docs.study_doc.iter() {
+            find_or_create_study_doc(&conn, &db_study, &new_study_doc)?;
+        }
+    }
 
-    // Outcomes
+    // Primary Outcomes
     if let Some(new_primary_outcomes) = &new_study.primary_outcome {
         for new_outcome in new_primary_outcomes.iter() {
             find_or_create_study_outcome(
@@ -1351,6 +1339,7 @@ pub fn update_study<'a>(
         }
     }
 
+    // Secondary Outcomes
     if let Some(new_secondary_outcomes) = &new_study.secondary_outcome {
         for new_outcome in new_secondary_outcomes.iter() {
             find_or_create_study_outcome(
@@ -1362,6 +1351,7 @@ pub fn update_study<'a>(
         }
     }
 
+    // Other Outcomes
     if let Some(new_other_outcomes) = &new_study.other_outcome {
         for new_outcome in new_other_outcomes.iter() {
             find_or_create_study_outcome(
