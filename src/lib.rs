@@ -1383,6 +1383,24 @@ fn get_all_text(study: &ClinicalStudy) -> Option<String> {
         }
     }
 
+    let references = match &study.reference {
+        Some(refs) => {
+            let mut vals: Vec<String> = vec![];
+            for reference in refs {
+                if let Some(cite) = &reference.citation {
+                    vals.push(cite.to_string());
+                }
+
+                if let Some(pmid) = &reference.pmid {
+                    vals.push(pmid.to_string());
+                }
+            }
+
+            vals.join(" ")
+        }
+        _ => "".to_string(),
+    };
+
     let interventions = match &study.intervention {
         Some(vals) => vals
             .into_iter()
@@ -1446,6 +1464,7 @@ fn get_all_text(study: &ClinicalStudy) -> Option<String> {
         interventions,
         lead_sponsor,
         collaborators,
+        references,
         vec_text(study.condition.as_ref()),
         vec_text(study.keyword.as_ref()),
         opt_text(study.official_title.as_ref()),
