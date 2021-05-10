@@ -665,6 +665,8 @@ pub fn run(config: Config) -> MyResult<()> {
         println!("{:6}: {} => {}", fnum + 1, &basename, &result);
     }
 
+    update_dataload(&conn)?;
+
     Ok(())
 }
 
@@ -744,7 +746,7 @@ fn process_file(
 }
 
 // --------------------------------------------------
-pub fn connection() -> MyResult<PgConnection> {
+fn connection() -> MyResult<PgConnection> {
     dotenv().ok();
 
     let database_url =
@@ -771,7 +773,7 @@ fn parse_xml(path: &Path) -> MyResult<ClinicalStudy> {
 }
 
 // --------------------------------------------------
-pub fn find_or_create_condition<'a>(
+fn find_or_create_condition<'a>(
     conn: &PgConnection,
     new_condition_name: &'a str,
 ) -> DbResult<DbCondition> {
@@ -797,7 +799,7 @@ pub fn find_or_create_condition<'a>(
 }
 
 // --------------------------------------------------
-pub fn find_or_create_intervention<'a>(
+fn find_or_create_intervention<'a>(
     conn: &PgConnection,
     new_intervention_name: &'a str,
 ) -> DbResult<DbIntervention> {
@@ -825,7 +827,7 @@ pub fn find_or_create_intervention<'a>(
 }
 
 // --------------------------------------------------
-pub fn find_or_create_sponsor<'a>(
+fn find_or_create_sponsor<'a>(
     conn: &PgConnection,
     new_sponsor_name: &'a str,
 ) -> DbResult<DbSponsor> {
@@ -851,7 +853,7 @@ pub fn find_or_create_sponsor<'a>(
 }
 
 // --------------------------------------------------
-pub fn find_or_create_study_doc(
+fn find_or_create_study_doc(
     conn: &PgConnection,
     new_study: &DbStudy,
     new_doc: &StudyDoc,
@@ -891,31 +893,31 @@ pub fn find_or_create_study_doc(
 }
 
 // --------------------------------------------------
-pub fn delete_study_conditions(
-    conn: &PgConnection,
-    new_study: &DbStudy,
-) -> DbResult<()> {
-    diesel::delete(
-        study_to_condition::table
-            .filter(study_to_condition::study_id.eq(new_study.study_id)),
-    )
-    .execute(conn)?;
+//fn delete_study_conditions(
+//    conn: &PgConnection,
+//    new_study: &DbStudy,
+//) -> DbResult<()> {
+//    diesel::delete(
+//        study_to_condition::table
+//            .filter(study_to_condition::study_id.eq(new_study.study_id)),
+//    )
+//    .execute(conn)?;
 
-    Ok(())
-}
+//    Ok(())
+//}
 
 // --------------------------------------------------
-pub fn delete_study_docs(
-    conn: &PgConnection,
-    new_study: &DbStudy,
-) -> DbResult<()> {
-    diesel::delete(
-        study_doc::table.filter(study_doc::study_id.eq(new_study.study_id)),
-    )
-    .execute(conn)?;
+//fn delete_study_docs(
+//    conn: &PgConnection,
+//    new_study: &DbStudy,
+//) -> DbResult<()> {
+//    diesel::delete(
+//        study_doc::table.filter(study_doc::study_id.eq(new_study.study_id)),
+//    )
+//    .execute(conn)?;
 
-    Ok(())
-}
+//    Ok(())
+//}
 
 // --------------------------------------------------
 fn find_files(paths: &Vec<String>) -> MyResult<Vec<String>> {
@@ -937,7 +939,7 @@ fn find_files(paths: &Vec<String>) -> MyResult<Vec<String>> {
 }
 
 // --------------------------------------------------
-pub fn find_or_create_study_to_condition(
+fn find_or_create_study_to_condition(
     conn: &PgConnection,
     new_study: &DbStudy,
     new_condition: &DbCondition,
@@ -972,7 +974,7 @@ pub fn find_or_create_study_to_condition(
 }
 
 // --------------------------------------------------
-pub fn find_or_create_study_to_intervention(
+fn find_or_create_study_to_intervention(
     conn: &PgConnection,
     new_study: &DbStudy,
     new_intervention: &DbIntervention,
@@ -1010,7 +1012,7 @@ pub fn find_or_create_study_to_intervention(
 }
 
 // --------------------------------------------------
-pub fn find_or_create_study_to_sponsor(
+fn find_or_create_study_to_sponsor(
     conn: &PgConnection,
     new_study: &DbStudy,
     new_sponsor: &DbSponsor,
@@ -1042,7 +1044,7 @@ pub fn find_or_create_study_to_sponsor(
 }
 
 // --------------------------------------------------
-pub fn find_or_create_phase<'a>(
+fn find_or_create_phase<'a>(
     conn: &PgConnection,
     new_phase_name: &'a str,
 ) -> DbResult<DbPhase> {
@@ -1068,7 +1070,7 @@ pub fn find_or_create_phase<'a>(
 }
 
 // --------------------------------------------------
-pub fn find_or_create_status<'a>(
+fn find_or_create_status<'a>(
     conn: &PgConnection,
     new_status_name: &'a str,
 ) -> DbResult<DbStatus> {
@@ -1117,7 +1119,7 @@ fn study_last_updated<'a>(
 }
 
 // --------------------------------------------------
-pub fn find_or_create_study<'a>(
+fn find_or_create_study<'a>(
     conn: &PgConnection,
     db_phase: &DbPhase,
     db_study_type: &DbStudyType,
@@ -1160,7 +1162,7 @@ pub fn find_or_create_study<'a>(
 }
 
 // --------------------------------------------------
-pub fn find_or_create_study_type<'a>(
+fn find_or_create_study_type<'a>(
     conn: &PgConnection,
     new_study_type_name: &'a str,
 ) -> DbResult<DbStudyType> {
@@ -1186,7 +1188,7 @@ pub fn find_or_create_study_type<'a>(
 }
 
 // --------------------------------------------------
-pub fn find_or_create_study_outcome<'a>(
+fn find_or_create_study_outcome<'a>(
     conn: &PgConnection,
     new_study: &DbStudy,
     new_outcome: &ProtocolOutcome,
@@ -1227,7 +1229,7 @@ pub fn find_or_create_study_outcome<'a>(
 }
 
 // --------------------------------------------------
-pub fn update_study<'a>(
+fn update_study<'a>(
     conn: &PgConnection,
     db_study: &'a DbStudy,
     new_study: &ClinicalStudy,
@@ -1263,10 +1265,22 @@ pub fn update_study<'a>(
             start_date.eq(extract_date(&new_study.start_date.as_ref())),
             completion_date
                 .eq(extract_date(&new_study.completion_date.as_ref())),
-            all_text.eq(get_all_text(&new_study)),
+            fulltext_load.eq(get_all_text(&new_study)),
         ))
         .execute(conn)
         .expect("Error updating study");
+
+    //let sql = format!(
+    //    r#"
+    //        update study
+    //        set fulltext=to_tsvector('english', fulltext_load)
+    //        where study_id={}
+    //    "#,
+    //    db_study.study_id
+    //);
+
+    //let _: Result<Vec<String>, diesel::result::Error> =
+    //    diesel::sql_query(sql).load(conn);
 
     //// Conditions
     //delete_study_conditions(&conn, &db_study)?;
@@ -1518,6 +1532,25 @@ fn extract_date(val: &Option<&String>) -> Option<NaiveDate> {
         }
         _ => None,
     }
+}
+
+// --------------------------------------------------
+fn update_dataload<'a>(conn: &PgConnection) -> MyResult<()> {
+    use crate::schema::dataload::dsl::*;
+
+    let today = Some(Utc::now().naive_utc().date());
+    let results = dataload
+        .filter(updated_on.eq(today))
+        .first::<DbDataload>(conn);
+
+    if let Err(_) = results {
+        diesel::insert_into(dataload)
+            .values(DbDataloadInsert { updated_on: today })
+            .execute(conn)
+            .expect("Error inserting dataload");
+    }
+
+    Ok(())
 }
 
 // --------------------------------------------------

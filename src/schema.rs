@@ -6,6 +6,13 @@ table! {
 }
 
 table! {
+    dataload (dataload_id) {
+        dataload_id -> Int4,
+        updated_on -> Nullable<Date>,
+    }
+}
+
+table! {
     intervention (intervention_id) {
         intervention_id -> Int4,
         intervention_name -> Varchar,
@@ -16,6 +23,24 @@ table! {
     phase (phase_id) {
         phase_id -> Int4,
         phase_name -> Varchar,
+    }
+}
+
+table! {
+    saved_search (saved_search_id) {
+        saved_search_id -> Int4,
+        web_user_id -> Int4,
+        search_name -> Varchar,
+        full_text -> Text,
+        full_text_bool -> Int4,
+        conditions -> Text,
+        conditions_bool -> Int4,
+        sponsors -> Text,
+        sponsors_bool -> Int4,
+        phase_ids -> Text,
+        study_type_ids -> Text,
+        enrollment -> Int4,
+        email_to -> Varchar,
     }
 }
 
@@ -58,8 +83,8 @@ table! {
         enrollment -> Nullable<Int4>,
         start_date -> Nullable<Date>,
         completion_date -> Nullable<Date>,
-        all_text -> Nullable<Text>,
         record_last_updated -> Nullable<Timestamp>,
+        fulltext_load -> Nullable<Text>,
     }
 }
 
@@ -116,6 +141,16 @@ table! {
     }
 }
 
+table! {
+    web_user (web_user_id) {
+        web_user_id -> Int4,
+        email -> Varchar,
+        name -> Varchar,
+        picture -> Varchar,
+    }
+}
+
+joinable!(saved_search -> web_user (web_user_id));
 joinable!(study -> phase (phase_id));
 joinable!(study -> study_type (study_type_id));
 joinable!(study_doc -> study (study_id));
@@ -129,8 +164,10 @@ joinable!(study_to_sponsor -> study (study_id));
 
 allow_tables_to_appear_in_same_query!(
     condition,
+    dataload,
     intervention,
     phase,
+    saved_search,
     sponsor,
     status,
     study,
@@ -140,4 +177,5 @@ allow_tables_to_appear_in_same_query!(
     study_to_intervention,
     study_to_sponsor,
     study_type,
+    web_user,
 );

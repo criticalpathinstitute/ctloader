@@ -3,6 +3,7 @@
 
 use crate::schema::*;
 use chrono::{NaiveDate, NaiveDateTime};
+use diesel_full_text_search::TsVector;
 
 #[derive(Queryable, Debug, Identifiable)]
 #[primary_key(condition_id)]
@@ -101,8 +102,8 @@ pub struct DbStudy {
     pub enrollment: Option<i32>,
     pub start_date: Option<NaiveDate>,
     pub completion_date: Option<NaiveDate>,
-    pub all_text: Option<String>,
     pub record_last_updated: Option<NaiveDateTime>,
+    pub fulltext_load: Option<String>,
 }
 
 #[derive(Insertable, Debug)]
@@ -219,4 +220,18 @@ pub struct DbStudyToSponsor {
 pub struct DbStudyToSponsorInsert {
     pub study_id: i32,
     pub sponsor_id: i32,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
+#[primary_key(dataload_id)]
+#[table_name = "dataload"]
+pub struct DbDataload {
+    pub dataload_id: i32,
+    pub updated_on: Option<NaiveDate>,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "dataload"]
+pub struct DbDataloadInsert {
+    pub updated_on: Option<NaiveDate>,
 }
