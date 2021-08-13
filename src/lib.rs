@@ -1083,7 +1083,9 @@ fn find_files(paths: &Vec<String>) -> MyResult<Vec<String>> {
             WalkDir::new(path)
                 .into_iter()
                 .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().unwrap() == "xml")
+                .filter(|e| {
+                    e.path().extension().map_or(false, |ext| ext == "xml")
+                })
                 .map(|e| e.path().display().to_string()),
         );
     }
