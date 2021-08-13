@@ -3,6 +3,7 @@
 
 use crate::schema::*;
 use chrono::{NaiveDate, NaiveDateTime};
+//use diesel::sql_types::Date;
 use diesel_full_text_search::TsVector;
 
 #[derive(Queryable, Debug, Identifiable)]
@@ -191,6 +192,106 @@ pub struct DbStudyDocInsert {
 }
 
 #[derive(Queryable, Debug, Identifiable)]
+#[primary_key(study_url_id)]
+#[table_name = "study_url"]
+pub struct DbStudyUrl {
+    pub study_url_id: i32,
+    pub study_id: i32,
+    pub url: Option<String>,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_url"]
+pub struct DbStudyUrlInsert {
+    pub study_id: i32,
+    pub url: Option<String>,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
+#[primary_key(study_design_id)]
+#[table_name = "study_design"]
+pub struct DbStudyDesign {
+    pub study_design_id: i32,
+    pub study_id: i32,
+    pub allocation: Option<String>,
+    pub intervention_model: Option<String>,
+    pub intervention_model_description: Option<String>,
+    pub primary_purpose: Option<String>,
+    pub observational_model: Option<String>,
+    pub time_perspective: Option<String>,
+    pub masking: Option<String>,
+    pub masking_description: Option<String>,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_design"]
+pub struct DbStudyDesignInsert {
+    pub study_id: i32,
+    pub allocation: Option<String>,
+    pub intervention_model: Option<String>,
+    pub intervention_model_description: Option<String>,
+    pub primary_purpose: Option<String>,
+    pub observational_model: Option<String>,
+    pub time_perspective: Option<String>,
+    pub masking: Option<String>,
+    pub masking_description: Option<String>,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
+#[primary_key(study_eligibility_id)]
+#[table_name = "study_eligibility"]
+pub struct DbStudyEligibility {
+    pub study_eligibility_id: i32,
+    pub study_id: i32,
+    pub study_pop: Option<String>,
+    pub sampling_method: Option<String>,
+    pub criteria: Option<String>,
+    pub gender: Option<String>,
+    pub gender_based: Option<String>,
+    pub gender_description: Option<String>,
+    pub minimum_age: Option<String>,
+    pub maximum_age: Option<String>,
+    pub healthy_volunteers: Option<String>,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_eligibility"]
+pub struct DbStudyEligibilityInsert {
+    pub study_id: i32,
+    pub study_pop: Option<String>,
+    pub sampling_method: Option<String>,
+    pub criteria: Option<String>,
+    pub gender: Option<String>,
+    pub gender_based: Option<String>,
+    pub gender_description: Option<String>,
+    pub minimum_age: Option<String>,
+    pub maximum_age: Option<String>,
+    pub healthy_volunteers: Option<String>,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
+#[primary_key(study_location_id)]
+#[table_name = "study_location"]
+pub struct DbStudyLocation {
+    pub study_location_id: i32,
+    pub study_id: i32,
+    pub facility_name: Option<String>,
+    pub status: Option<String>,
+    pub contact_name: Option<String>,
+    pub investigator_name: Option<String>,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_location"]
+pub struct DbStudyLocationInsert {
+    pub study_id: i32,
+    pub facility_name: Option<String>,
+    pub status: Option<String>,
+    pub contact_name: Option<String>,
+    pub investigator_name: Option<String>,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
 #[primary_key(study_to_intervention_id)]
 #[table_name = "study_to_intervention"]
 pub struct DbStudyToIntervention {
@@ -230,8 +331,8 @@ pub struct DbDataload {
     pub updated_on: Option<NaiveDate>,
 }
 
-#[derive(Insertable, Debug)]
-#[table_name = "dataload"]
-pub struct DbDataloadInsert {
-    pub updated_on: Option<NaiveDate>,
-}
+//#[derive(Insertable, Debug)]
+//#[table_name = "dataload"]
+//pub struct DbDataloadInsert {
+//    pub updated_on: Option<NaiveDate>,
+//}
