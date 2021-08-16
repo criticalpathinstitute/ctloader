@@ -331,8 +331,8 @@ pub struct DbDataload {
     pub updated_on: Option<NaiveDate>,
 }
 
-//#[derive(Insertable, Debug)]
-//#[table_name = "dataload"]
-//pub struct DbDataloadInsert {
-//    pub updated_on: Option<NaiveDate>,
-//}
+#[derive(Insertable, Debug)]
+#[table_name = "dataload"]
+pub struct DbDataloadInsert {
+    pub updated_on: Option<NaiveDate>,
+}

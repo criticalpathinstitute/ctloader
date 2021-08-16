@@ -16,9 +16,9 @@ pub mod schema;
 
 //use crate::schema::dataload;
 use crate::schema::{
-    condition, intervention, phase, sponsor, status, study_design, study_doc,
-    study_eligibility, study_location, study_outcome, study_to_condition,
-    study_to_intervention, study_to_sponsor, study_type, study_url,
+    condition, intervention, phase, sponsor, status, study_design, study_doc, study_eligibility,
+    study_location, study_outcome, study_to_condition, study_to_intervention, study_to_sponsor,
+    study_type, study_url,
 };
 use chrono::{NaiveDate, Utc};
 use clap::{App, Arg};
@@ -28,10 +28,7 @@ use dotenv::dotenv;
 use models::*;
 use regex::Regex;
 use serde::Deserialize;
-use std::{
-    collections::HashSet, env, error::Error, fs::File, io::BufReader,
-    path::Path,
-};
+use std::{collections::HashSet, env, error::Error, fs::File, io::BufReader, path::Path};
 use walkdir::WalkDir;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -657,17 +654,14 @@ pub fn run(config: Config) -> MyResult<()> {
         println!("{:6}: {} => {}", fnum + 1, &basename, &result);
     }
 
-    //update_dataload(&conn)?;
+    update_dataload(&conn)?;
 
+    println!("Done.");
     Ok(())
 }
 
 // --------------------------------------------------
-fn process_file(
-    conn: &PgConnection,
-    filename: &str,
-    force: &bool,
-) -> MyResult<DbStudy> {
+fn process_file(conn: &PgConnection, filename: &str, force: &bool) -> MyResult<DbStudy> {
     let path = Path::new(&filename);
     if !path.is_file() {
         return Err(From::from(format!("'{}' not a valid file", filename)));
@@ -695,8 +689,7 @@ fn process_file(
         .to_string();
     let db_phase = find_or_create_phase(&conn, &new_phase_name)?;
 
-    let db_study_type =
-        find_or_create_study_type(&conn, &clinical_study.study_type)?;
+    let db_study_type = find_or_create_study_type(&conn, &clinical_study.study_type)?;
 
     let new_overall_status = &clinical_study
         .overall_status
@@ -704,8 +697,7 @@ fn process_file(
         .unwrap_or("Unknown status".to_string())
         .to_string();
 
-    let db_overall_status =
-        find_or_create_status(&conn, &new_overall_status)?;
+    let db_overall_status = find_or_create_status(&conn, &new_overall_status)?;
 
     let new_last_known_status = &clinical_study
         .last_known_status
@@ -713,8 +705,7 @@ fn process_file(
         .unwrap_or("Unknown status".to_string())
         .to_string();
 
-    let db_last_known_status =
-        find_or_create_status(&conn, &new_last_known_status)?;
+    let db_last_known_status = find_or_create_status(&conn, &new_last_known_status)?;
 
     let result = find_or_create_study(
         &conn,
@@ -741,8 +732,7 @@ fn process_file(
 fn connection() -> MyResult<PgConnection> {
     dotenv().ok();
 
-    let database_url =
-        env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     // println!("URL {}", database_url);
 
     match PgConnection::establish(&database_url) {
@@ -811,9 +801,7 @@ fn find_or_create_intervention<'a>(
                 .expect("Error inserting intervention");
 
             intervention::table
-                .filter(
-                    intervention::intervention_name.eq(new_intervention_name),
-                )
+                .filter(intervention::intervention_name.eq(new_intervention_name))
                 .first::<DbIntervention>(conn)
         }
     }
@@ -917,8 +905,7 @@ fn find_or_create_study_design(
     new_study: &DbStudy,
     new_design: &StudyDesignInfo,
 ) -> DbResult<DbStudyDesign> {
-    let query = study_design::table
-        .filter(study_design::study_id.eq(&new_study.study_id));
+    let query = study_design::table.filter(study_design::study_id.eq(&new_study.study_id));
 
     match query.first::<DbStudyDesign>(conn) {
         Ok(e) => Ok(e),
@@ -932,14 +919,10 @@ fn find_or_create_study_design(
                         .intervention_model_description
                         .clone(),
                     primary_purpose: new_design.primary_purpose.clone(),
-                    observational_model: new_design
-                        .observational_model
-                        .clone(),
+                    observational_model: new_design.observational_model.clone(),
                     time_perspective: new_design.time_perspective.clone(),
                     masking: new_design.masking.clone(),
-                    masking_description: new_design
-                        .masking_description
-                        .clone(),
+                    masking_description: new_design.masking_description.clone(),
                 })
                 .execute(conn)
                 .expect("Error inserting study_design");
@@ -955,8 +938,8 @@ fn find_or_create_study_eligibility(
     new_study: &DbStudy,
     new_elig: &Eligibility,
 ) -> DbResult<DbStudyEligibility> {
-    let query = study_eligibility::table
-        .filter(study_eligibility::study_id.eq(&new_study.study_id));
+    let query =
+        study_eligibility::table.filter(study_eligibility::study_id.eq(&new_study.study_id));
 
     match query.first::<DbStudyEligibility>(conn) {
         Ok(e) => Ok(e),
@@ -964,9 +947,7 @@ fn find_or_create_study_eligibility(
             diesel::insert_into(study_eligibility::table)
                 .values(DbStudyEligibilityInsert {
                     study_id: new_study.study_id,
-                    study_pop: extract_textblock(
-                        &new_elig.study_pop.as_ref(),
-                    ),
+                    study_pop: extract_textblock(&new_elig.study_pop.as_ref()),
                     sampling_method: new_elig.sampling_method.clone(),
                     criteria: extract_textblock(&new_elig.criteria.as_ref()),
                     gender: new_elig.gender.clone(),
@@ -990,8 +971,7 @@ fn find_or_create_study_location(
     new_study: &DbStudy,
     new_location: &Location,
 ) -> DbResult<DbStudyLocation> {
-    let query = study_location::table
-        .filter(study_location::study_id.eq(&new_study.study_id));
+    let query = study_location::table.filter(study_location::study_id.eq(&new_study.study_id));
 
     match query.first::<DbStudyLocation>(conn) {
         Ok(e) => Ok(e),
@@ -1008,29 +988,27 @@ fn find_or_create_study_location(
                 ))
             });
 
-            let investigators =
-                new_location.investigator.as_ref().and_then(|v| {
-                    Some(
-                        v.iter()
-                            .map(|i| {
-                                format!(
-                                    "{} {}",
-                                    i.first_name
-                                        .as_ref()
-                                        .map_or("".to_string(), |v| v
-                                            .to_string()),
-                                    i.last_name
-                                )
-                            })
-                            .collect::<Vec<String>>()
-                            .join(", "),
-                    )
-                });
+            let investigators = new_location.investigator.as_ref().and_then(|v| {
+                Some(
+                    v.iter()
+                        .map(|i| {
+                            format!(
+                                "{} {}",
+                                i.first_name
+                                    .as_ref()
+                                    .map_or("".to_string(), |v| v.to_string()),
+                                i.last_name
+                            )
+                        })
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                )
+            });
 
-            let facility_name =
-                new_location.facility.as_ref().and_then(|f| {
-                    f.name.as_ref().and_then(|v| Some(v.to_string()))
-                });
+            let facility_name = new_location
+                .facility
+                .as_ref()
+                .and_then(|f| f.name.as_ref().and_then(|v| Some(v.to_string())));
 
             diesel::insert_into(study_location::table)
                 .values(DbStudyLocationInsert {
@@ -1083,9 +1061,7 @@ fn find_files(paths: &Vec<String>) -> MyResult<Vec<String>> {
             WalkDir::new(path)
                 .into_iter()
                 .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.path().extension().map_or(false, |ext| ext == "xml")
-                })
+                .filter(|e| e.path().extension().map_or(false, |ext| ext == "xml"))
                 .map(|e| e.path().display().to_string()),
         );
     }
@@ -1101,9 +1077,7 @@ fn find_or_create_study_to_condition(
 ) -> DbResult<DbStudyToCondition> {
     let results = study_to_condition::table
         .filter(study_to_condition::study_id.eq(new_study.study_id))
-        .filter(
-            study_to_condition::condition_id.eq(new_condition.condition_id),
-        )
+        .filter(study_to_condition::condition_id.eq(new_condition.condition_id))
         .first::<DbStudyToCondition>(conn);
 
     match results {
@@ -1119,10 +1093,7 @@ fn find_or_create_study_to_condition(
 
             study_to_condition::table
                 .filter(study_to_condition::study_id.eq(new_study.study_id))
-                .filter(
-                    study_to_condition::condition_id
-                        .eq(new_condition.condition_id),
-                )
+                .filter(study_to_condition::condition_id.eq(new_condition.condition_id))
                 .first::<DbStudyToCondition>(conn)
         }
     }
@@ -1136,10 +1107,7 @@ fn find_or_create_study_to_intervention(
 ) -> DbResult<DbStudyToIntervention> {
     let results = study_to_intervention::table
         .filter(study_to_intervention::study_id.eq(new_study.study_id))
-        .filter(
-            study_to_intervention::intervention_id
-                .eq(new_intervention.intervention_id),
-        )
+        .filter(study_to_intervention::intervention_id.eq(new_intervention.intervention_id))
         .first::<DbStudyToIntervention>(conn);
 
     match results {
@@ -1154,13 +1122,8 @@ fn find_or_create_study_to_intervention(
                 .expect("Error inserting intervention_to_study");
 
             study_to_intervention::table
-                .filter(
-                    study_to_intervention::study_id.eq(new_study.study_id),
-                )
-                .filter(
-                    study_to_intervention::intervention_id
-                        .eq(new_intervention.intervention_id),
-                )
+                .filter(study_to_intervention::study_id.eq(new_study.study_id))
+                .filter(study_to_intervention::intervention_id.eq(new_intervention.intervention_id))
                 .first::<DbStudyToIntervention>(conn)
         }
     }
@@ -1190,19 +1153,14 @@ fn find_or_create_study_to_sponsor(
 
             study_to_sponsor::table
                 .filter(study_to_sponsor::study_id.eq(new_study.study_id))
-                .filter(
-                    study_to_sponsor::sponsor_id.eq(new_sponsor.sponsor_id),
-                )
+                .filter(study_to_sponsor::sponsor_id.eq(new_sponsor.sponsor_id))
                 .first::<DbStudyToSponsor>(conn)
         }
     }
 }
 
 // --------------------------------------------------
-fn find_or_create_phase<'a>(
-    conn: &PgConnection,
-    new_phase_name: &'a str,
-) -> DbResult<DbPhase> {
+fn find_or_create_phase<'a>(conn: &PgConnection, new_phase_name: &'a str) -> DbResult<DbPhase> {
     let results = phase::table
         .filter(phase::phase_name.eq(new_phase_name))
         .first::<DbPhase>(conn);
@@ -1225,10 +1183,7 @@ fn find_or_create_phase<'a>(
 }
 
 // --------------------------------------------------
-fn find_or_create_status<'a>(
-    conn: &PgConnection,
-    new_status_name: &'a str,
-) -> DbResult<DbStatus> {
+fn find_or_create_status<'a>(conn: &PgConnection, new_status_name: &'a str) -> DbResult<DbStatus> {
     let results = status::table
         .filter(status::status_name.eq(new_status_name))
         .first::<DbStatus>(conn);
@@ -1251,21 +1206,15 @@ fn find_or_create_status<'a>(
 }
 
 // --------------------------------------------------
-fn study_last_updated<'a>(
-    conn: &PgConnection,
-    path: &Path,
-) -> Option<NaiveDate> {
+fn study_last_updated<'a>(conn: &PgConnection, path: &Path) -> Option<NaiveDate> {
     use crate::schema::study::dsl::*;
 
     match path.file_stem() {
         Some(stem) => {
             let study_nct_id = &stem.to_string_lossy().to_string();
 
-            match study.filter(nct_id.eq(study_nct_id)).first::<DbStudy>(conn)
-            {
-                Ok(db_study) => {
-                    db_study.record_last_updated.and_then(|d| Some(d.date()))
-                }
+            match study.filter(nct_id.eq(study_nct_id)).first::<DbStudy>(conn) {
+                Ok(db_study) => db_study.record_last_updated.and_then(|d| Some(d.date())),
                 _ => None,
             }
         }
@@ -1402,21 +1351,14 @@ fn update_study<'a>(
             acronym.eq(&new_study.acronym),
             source.eq(&new_study.source),
             rank.eq(&new_study.rank),
-            brief_summary
-                .eq(extract_textblock(&new_study.brief_summary.as_ref())),
-            detailed_description.eq(extract_textblock(
-                &new_study.detailed_description.as_ref(),
-            )),
+            brief_summary.eq(extract_textblock(&new_study.brief_summary.as_ref())),
+            detailed_description.eq(extract_textblock(&new_study.detailed_description.as_ref())),
             why_stopped.eq(&new_study.why_stopped),
             has_expanded_access.eq(&new_study.has_expanded_access),
             target_duration.eq(&new_study.target_duration),
             biospec_retention.eq(&new_study.biospec_retention),
-            biospec_description
-                .eq(extract_textblock(&new_study.biospec_descr.as_ref())),
-            keywords.eq(&new_study
-                .keyword
-                .as_ref()
-                .and_then(|x| Some(x.join(", ")))),
+            biospec_description.eq(extract_textblock(&new_study.biospec_descr.as_ref())),
+            keywords.eq(&new_study.keyword.as_ref().and_then(|x| Some(x.join(", ")))),
             enrollment.eq(&new_study.enrollment),
             //start_date.eq(extract_date(&new_study.start_date.as_ref())),
             //completion_date
@@ -1442,49 +1384,32 @@ fn update_study<'a>(
     //delete_study_conditions(&conn, &db_study)?;
     if let Some(new_conditions) = &new_study.condition {
         for new_condition in new_conditions {
-            let db_condition =
-                find_or_create_condition(&conn, &new_condition)?;
+            let db_condition = find_or_create_condition(&conn, &new_condition)?;
 
-            find_or_create_study_to_condition(
-                &conn,
-                &db_study,
-                &db_condition,
-            )?;
+            find_or_create_study_to_condition(&conn, &db_study, &db_condition)?;
         }
     }
 
     // Interventions
     if let Some(new_interventions) = &new_study.intervention {
         for new_intervention in new_interventions {
-            let db_intervention = find_or_create_intervention(
-                &conn,
-                &new_intervention.intervention_name,
-            )?;
+            let db_intervention =
+                find_or_create_intervention(&conn, &new_intervention.intervention_name)?;
 
-            find_or_create_study_to_intervention(
-                &conn,
-                &db_study,
-                &db_intervention,
-            )?;
+            find_or_create_study_to_intervention(&conn, &db_study, &db_intervention)?;
         }
     }
 
     // Sponsors
     if let Some(new_sponsors) = &new_study.sponsors {
-        let lead_sponsor =
-            find_or_create_sponsor(&conn, &new_sponsors.lead_sponsor.agency)?;
+        let lead_sponsor = find_or_create_sponsor(&conn, &new_sponsors.lead_sponsor.agency)?;
         find_or_create_study_to_sponsor(&conn, &db_study, &lead_sponsor)?;
 
         if let Some(collaborators) = &new_sponsors.collaborator {
             for new_sponsor in collaborators {
-                let db_sponsor =
-                    find_or_create_sponsor(&conn, &new_sponsor.agency)?;
+                let db_sponsor = find_or_create_sponsor(&conn, &new_sponsor.agency)?;
 
-                find_or_create_study_to_sponsor(
-                    &conn,
-                    &db_study,
-                    &db_sponsor,
-                )?;
+                find_or_create_study_to_sponsor(&conn, &db_study, &db_sponsor)?;
             }
         }
     }
@@ -1524,36 +1449,21 @@ fn update_study<'a>(
     // Primary Outcomes
     if let Some(new_primary_outcomes) = &new_study.primary_outcome {
         for new_outcome in new_primary_outcomes.iter() {
-            find_or_create_study_outcome(
-                &conn,
-                &db_study,
-                &new_outcome,
-                "primary".to_string(),
-            )?;
+            find_or_create_study_outcome(&conn, &db_study, &new_outcome, "primary".to_string())?;
         }
     }
 
     // Secondary Outcomes
     if let Some(new_secondary_outcomes) = &new_study.secondary_outcome {
         for new_outcome in new_secondary_outcomes.iter() {
-            find_or_create_study_outcome(
-                &conn,
-                &db_study,
-                &new_outcome,
-                "secondary".to_string(),
-            )?;
+            find_or_create_study_outcome(&conn, &db_study, &new_outcome, "secondary".to_string())?;
         }
     }
 
     // Other Outcomes
     if let Some(new_other_outcomes) = &new_study.other_outcome {
         for new_outcome in new_other_outcomes.iter() {
-            find_or_create_study_outcome(
-                &conn,
-                &db_study,
-                &new_outcome,
-                "other".to_string(),
-            )?;
+            find_or_create_study_outcome(&conn, &db_study, &new_outcome, "other".to_string())?;
         }
     }
 
@@ -1674,10 +1584,7 @@ fn get_all_text(study: &ClinicalStudy) -> Option<String> {
     for fld in &all_fields {
         for word in fld.split_whitespace() {
             let clean = re1
-                .replace_all(
-                    &re2.replace_all(&word.to_ascii_lowercase(), ""),
-                    "",
-                )
+                .replace_all(&re2.replace_all(&word.to_ascii_lowercase(), ""), "")
                 .to_string();
 
             if clean.len() > 2 {
@@ -1715,23 +1622,23 @@ fn extract_date(val: &Option<&String>) -> Option<NaiveDate> {
 }
 
 // --------------------------------------------------
-//fn update_dataload<'a>(conn: &PgConnection) -> MyResult<()> {
-//    use crate::schema::dataload::dsl::*;
+fn update_dataload<'a>(conn: &PgConnection) -> MyResult<()> {
+    use crate::schema::dataload::dsl::*;
 
-//    let today = Some(Utc::now().naive_utc().date());
-//    let results = dataload
-//        .filter(updated_on.eq(today))
-//        .first::<DbDataload>(conn);
+    let today = Some(Utc::now().naive_utc().date());
+    let results = dataload
+        .filter(updated_on.eq(today))
+        .first::<DbDataload>(conn);
 
-//    if let Err(_) = results {
-//        diesel::insert_into(dataload)
-//            .values(DbDataloadInsert { updated_on: today })
-//            .execute(conn)
-//            .expect("Error inserting dataload");
-//    }
+    if let Err(_) = results {
+        diesel::insert_into(dataload)
+            .values(DbDataloadInsert { updated_on: today })
+            .execute(conn)
+            .expect("Error inserting dataload");
+    }
 
-//    Ok(())
-//}
+    Ok(())
+}
 
 // --------------------------------------------------
 #[cfg(test)]
