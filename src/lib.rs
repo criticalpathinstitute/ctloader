@@ -658,8 +658,9 @@ pub fn run(config: Config) -> MyResult<()> {
         println!("{:6}: {} => {}", fnum + 1, &basename, &result);
     }
 
-    //update_dataload(&conn)?;
+    update_dataload(&conn)?;
 
+    println!("Done.");
     Ok(())
 }
 
@@ -1760,23 +1761,23 @@ fn extract_date(val: &Option<&String>) -> Option<NaiveDate> {
 }
 
 // --------------------------------------------------
-//fn update_dataload<'a>(conn: &PgConnection) -> MyResult<()> {
-//    use crate::schema::dataload::dsl::*;
+fn update_dataload<'a>(conn: &PgConnection) -> MyResult<()> {
+    use crate::schema::dataload::dsl::*;
 
-//    let today = Some(Utc::now().naive_utc().date());
-//    let results = dataload
-//        .filter(updated_on.eq(today))
-//        .first::<DbDataload>(conn);
+    let today = Some(Utc::now().naive_utc().date());
+    let results = dataload
+        .filter(updated_on.eq(today))
+        .first::<DbDataload>(conn);
 
-//    if let Err(_) = results {
-//        diesel::insert_into(dataload)
-//            .values(DbDataloadInsert { updated_on: today })
-//            .execute(conn)
-//            .expect("Error inserting dataload");
-//    }
+    if let Err(_) = results {
+        diesel::insert_into(dataload)
+            .values(DbDataloadInsert { updated_on: today })
+            .execute(conn)
+            .expect("Error inserting dataload");
+    }
 
-//    Ok(())
-//}
+    Ok(())
+}
 
 // --------------------------------------------------
 #[cfg(test)]
