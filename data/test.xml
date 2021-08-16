@@ -409,5 +409,25 @@
     </study_doc>
   </study_docs>
   <!-- Results have not yet been posted for this study                                          -->
+  <arm_group>
+    <arm_group_label>Filtered Air</arm_group_label>
+    <arm_group_type>No Intervention</arm_group_type>
+    <description>Subjects sit in a room for two hours breathing in filtered air which resembles levels of air pollution found in the ambient environment</description>
+  </arm_group>
+  <arm_group>
+    <arm_group_label>Diesel Exhaust</arm_group_label>
+    <arm_group_type>Active Comparator</arm_group_type>
+    <description>Subjects sit in a room for two hours breathing in diesel exhaust at 200 micrograms of meter cubed.</description>
+  </arm_group>
+  <arm_group>
+    <arm_group_label>TSST/Stress only</arm_group_label>
+    <arm_group_type>Active Comparator</arm_group_type>
+    <description>Subjects undergo a mental stress test, known as the Trier Social Stress Test (TSST), which involves a public speaking and math task.</description>
+  </arm_group>
+  <arm_group>
+    <arm_group_label>Diesel Exhaust and stress</arm_group_label>
+    <arm_group_type>Active Comparator</arm_group_type>
+    <description>Subjects sit in a room for two hours breathing in diesel exhaust at 200 micrograms of meter cubed and are subject to a mental stress test (TSST) which involves a public speaking and math task.</description>
+  </arm_group>
 </clinical_study>
 

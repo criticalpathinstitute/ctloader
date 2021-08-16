@@ -16,9 +16,10 @@ pub mod schema;
 
 //use crate::schema::dataload;
 use crate::schema::{
-    condition, intervention, phase, sponsor, status, study_design, study_doc,
-    study_eligibility, study_location, study_outcome, study_to_condition,
-    study_to_intervention, study_to_sponsor, study_type, study_url,
+    condition, intervention, phase, sponsor, status, study_arm_group,
+    study_design, study_doc, study_eligibility, study_location,
+    study_outcome, study_to_condition, study_to_intervention,
+    study_to_sponsor, study_type, study_url,
 };
 use chrono::{NaiveDate, Utc};
 use clap::{App, Arg};
@@ -846,6 +847,43 @@ fn find_or_create_sponsor<'a>(
 }
 
 // --------------------------------------------------
+fn find_or_create_study_arm_group(
+    conn: &PgConnection,
+    new_study: &DbStudy,
+    new_arm_group: &ArmGroup,
+) -> DbResult<DbStudyArmGroup> {
+    fn opt_text(val: &Option<String>) -> Option<String> {
+        Some(val.as_ref().unwrap_or(&"".to_string()).to_string())
+    }
+
+    let new_arm_group_label = &new_arm_group.arm_group_label;
+    let new_arm_group_type = opt_text(&new_arm_group.arm_group_type);
+    let new_description = opt_text(&new_arm_group.description);
+    let query = study_arm_group::table
+        .filter(study_arm_group::study_id.eq(&new_study.study_id))
+        .filter(study_arm_group::arm_group_label.eq(&new_arm_group_label))
+        .filter(study_arm_group::arm_group_type.eq(&new_arm_group_type))
+        .filter(study_arm_group::description.eq(&new_description));
+
+    match query.first::<DbStudyArmGroup>(conn) {
+        Ok(c) => Ok(c),
+        _ => {
+            diesel::insert_into(study_arm_group::table)
+                .values(DbStudyArmGroupInsert {
+                    study_id: new_study.study_id,
+                    arm_group_label: new_arm_group_label.clone(),
+                    arm_group_type: new_arm_group_type.clone(),
+                    description: new_description.clone(),
+                })
+                .execute(conn)
+                .expect("Error inserting study_arm_group");
+
+            query.first::<DbStudyArmGroup>(conn)
+        }
+    }
+}
+
+// --------------------------------------------------
 fn find_or_create_study_doc(
     conn: &PgConnection,
     new_study: &DbStudy,
@@ -1486,6 +1524,13 @@ fn update_study<'a>(
                     &db_sponsor,
                 )?;
             }
+        }
+    }
+
+    // ArmGroup
+    if let Some(arm_groups) = &new_study.arm_group {
+        for group in arm_groups {
+            find_or_create_study_arm_group(&conn, &db_study, &group)?;
         }
     }
 

@@ -103,8 +103,8 @@ pub struct DbStudy {
     pub enrollment: Option<i32>,
     pub start_date: Option<NaiveDate>,
     pub completion_date: Option<NaiveDate>,
-    pub record_last_updated: Option<NaiveDateTime>,
     pub fulltext_load: Option<String>,
+    pub record_last_updated: Option<NaiveDateTime>,
 }
 
 #[derive(Insertable, Debug)]
@@ -267,6 +267,26 @@ pub struct DbStudyEligibilityInsert {
     pub minimum_age: Option<String>,
     pub maximum_age: Option<String>,
     pub healthy_volunteers: Option<String>,
+}
+
+#[derive(Queryable, Debug, Identifiable)]
+#[primary_key(study_arm_group_id)]
+#[table_name = "study_arm_group"]
+pub struct DbStudyArmGroup {
+    pub study_arm_group_id: i32,
+    pub study_id: i32,
+    pub arm_group_label: String,
+    pub arm_group_type: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Insertable, Debug)]
+#[table_name = "study_arm_group"]
+pub struct DbStudyArmGroupInsert {
+    pub study_id: i32,
+    pub arm_group_label: String,
+    pub arm_group_type: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Queryable, Debug, Identifiable)]

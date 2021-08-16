@@ -83,9 +83,19 @@ table! {
         enrollment -> Nullable<Int4>,
         start_date -> Nullable<Date>,
         completion_date -> Nullable<Date>,
-        record_last_updated -> Nullable<Timestamp>,
         fulltext_load -> Nullable<Text>,
         //fulltext -> Nullable<Tsvector>,
+        record_last_updated -> Nullable<Timestamp>,
+    }
+}
+
+table! {
+    study_arm_group (study_arm_group_id) {
+        study_arm_group_id -> Int4,
+        study_id -> Int4,
+        arm_group_label -> Varchar,
+        arm_group_type -> Nullable<Text>,
+        description -> Nullable<Text>,
     }
 }
 
@@ -204,6 +214,7 @@ table! {
 joinable!(saved_search -> web_user (web_user_id));
 joinable!(study -> phase (phase_id));
 joinable!(study -> study_type (study_type_id));
+joinable!(study_arm_group -> study (study_id));
 joinable!(study_design -> study (study_id));
 joinable!(study_doc -> study (study_id));
 joinable!(study_eligibility -> study (study_id));
@@ -226,6 +237,7 @@ allow_tables_to_appear_in_same_query!(
     sponsor,
     status,
     study,
+    study_arm_group,
     study_design,
     study_doc,
     study_eligibility,
