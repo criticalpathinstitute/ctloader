@@ -2,12 +2,12 @@
 name = "ctloader"
 version = "0.2.0"
 authors = ["Ken Youens-Clark <kyclark@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 chrono = "0.4"
 clap = "2.33"
-diesel = { version = "1.4.7", features = ["postgres", "chrono"] }
+diesel = { version = "1.4", features = ["postgres", "chrono"] }
 diesel_full_text_search = "1"
 dotenv = "0.15"
 dtparse = "1.2"

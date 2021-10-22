@@ -1397,28 +1397,16 @@ fn update_study<'a>(
             biospec_description.eq(extract_textblock(&new_study.biospec_descr.as_ref())),
             keywords.eq(&new_study.keyword.as_ref().and_then(|x| Some(x.join(", ")))),
             enrollment.eq(&new_study.enrollment),
-            //start_date.eq(extract_date(&new_study.start_date.as_ref())),
-            //completion_date
-            //    .eq(extract_date(&new_study.completion_date.as_ref())),
+            start_date.eq(extract_date(&new_study.start_date.as_ref())),
+            completion_date.eq(extract_date(&new_study.completion_date.as_ref())),
+            study_first_posted.eq(extract_date(&new_study.study_first_posted.as_ref())),
+            last_update_posted.eq(extract_date(&new_study.last_update_posted.as_ref())),
             fulltext_load.eq(get_all_text(&new_study)),
         ))
         .execute(conn)
         .expect("Error updating study");
 
-    //let sql = format!(
-    //    r#"
-    //        update study
-    //        set fulltext=to_tsvector('english', fulltext_load)
-    //        where study_id={}
-    //    "#,
-    //    db_study.study_id
-    //);
-
-    //let _: Result<Vec<String>, diesel::result::Error> =
-    //    diesel::sql_query(sql).load(conn);
-
-    //// Conditions
-    //delete_study_conditions(&conn, &db_study)?;
+    // Conditions
     if let Some(new_conditions) = &new_study.condition {
         for new_condition in new_conditions {
             let db_condition = find_or_create_condition(&conn, &new_condition)?;

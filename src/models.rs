@@ -103,6 +103,8 @@ pub struct DbStudy {
     pub enrollment: Option<i32>,
     pub start_date: Option<NaiveDate>,
     pub completion_date: Option<NaiveDate>,
+    pub study_first_posted: Option<NaiveDate>,
+    pub last_update_posted: Option<NaiveDate>,
     pub fulltext_load: Option<String>,
     pub record_last_updated: Option<NaiveDateTime>,
 }

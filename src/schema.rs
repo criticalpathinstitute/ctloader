@@ -83,8 +83,9 @@ table! {
         enrollment -> Nullable<Int4>,
         start_date -> Nullable<Date>,
         completion_date -> Nullable<Date>,
+        study_first_posted -> Nullable<Date>,
+        last_update_posted -> Nullable<Date>,
         fulltext_load -> Nullable<Text>,
-        //fulltext -> Nullable<Tsvector>,
         record_last_updated -> Nullable<Timestamp>,
     }
 }
@@ -146,9 +147,9 @@ table! {
         study_location_id -> Int4,
         study_id -> Int4,
         facility_name -> Nullable<Varchar>,
-        status -> Nullable<Varchar>,
-        contact_name -> Nullable<Varchar>,
-        investigator_name -> Nullable<Varchar>,
+        status -> Nullable<Text>,
+        contact_name -> Nullable<Text>,
+        investigator_name -> Nullable<Text>,
     }
 }
 
@@ -157,9 +158,9 @@ table! {
         study_outcome_id -> Int4,
         study_id -> Int4,
         outcome_type -> Varchar,
-        measure -> Text,
-        time_frame -> Nullable<Text>,
-        description -> Nullable<Text>,
+        measure -> Varchar,
+        time_frame -> Nullable<Varchar>,
+        description -> Nullable<Varchar>,
     }
 }
 
